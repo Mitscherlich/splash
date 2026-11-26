@@ -8,6 +8,15 @@ export const cdCommand: CommandDefinition = {
   name: 'cd',
   summary: 'Switch to a tab by its exact Chrome tab ID',
   usage: 'cd <tabId>',
+  manual: {
+    description:
+      'Activates the tab matching the given positive Chrome tab ID and focuses its window if it belongs to another Chrome window.',
+    examples: ['cd 1042'],
+    notes: [
+      'Press Tab after `cd ` (or a partial numeric prefix) to view and complete open tab IDs with titles.',
+      'Always keeps the current Splash terminal tab open.',
+    ],
+  },
 
   async execute(ctx, args) {
     if (args.length === 0) {

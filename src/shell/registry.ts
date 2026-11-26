@@ -14,10 +14,23 @@ export interface CommandContext {
   clear(): void;
 }
 
+export interface CommandManualOption {
+  flag: string;
+  description: string;
+}
+
+export interface CommandManual {
+  description: string;
+  options?: CommandManualOption[];
+  examples?: string[];
+  notes?: string[];
+}
+
 export interface CommandDefinition {
   name: string;
   summary: string;
   usage: string;
+  manual?: CommandManual;
   execute(ctx: CommandContext, args: string[]): Promise<void> | void;
   complete?(
     ctx: CommandContext,

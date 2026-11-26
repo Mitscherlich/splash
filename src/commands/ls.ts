@@ -42,6 +42,21 @@ export const lsCommand: CommandDefinition = {
   name: 'ls',
   summary: 'List open Chrome tabs (use -a to include new tab pages)',
   usage: 'ls [-a | --all]',
+  manual: {
+    description:
+      'Lists open Chrome tabs across all windows using their exact Chrome tab IDs, with the current window ordered first.',
+    options: [
+      {
+        flag: '-a, --all',
+        description: 'Include Splash / Chrome new tab pages in the listing.',
+      },
+    ],
+    examples: ['ls', 'ls -a'],
+    notes: [
+      'Click any displayed URL (or title on narrow windows) to switch directly to that tab.',
+      'Tabs in secondary windows are tagged W2, W3, etc.; `*` marks the active tab.',
+    ],
+  },
 
   async execute(ctx, args) {
     let includeNewTab = false;

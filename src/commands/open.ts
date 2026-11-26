@@ -59,6 +59,20 @@ export const openCommand: CommandDefinition = {
   name: 'open',
   summary: 'Open a URL or search query in a new tab',
   usage: 'open <url | search query>',
+  manual: {
+    description:
+      'Opens a URL in a new active tab, automatically adding http:// for localhost/IP addresses and https:// for bare domains. Non-URL inputs fall back to your Chrome default search engine.',
+    examples: [
+      'open github.com',
+      'open localhost:3000/api',
+      'open https://docs.rs',
+      'open xterm fit addon',
+    ],
+    notes: [
+      'Allowed explicit schemes: http://, https://, chrome://, chrome-extension://, file://, about:.',
+      'Blocks javascript: and data: schemes; always keeps the current terminal tab open.',
+    ],
+  },
 
   async execute(ctx, args) {
     const target = resolveOpenTarget(args);

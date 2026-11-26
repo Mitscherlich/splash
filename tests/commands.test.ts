@@ -364,8 +364,8 @@ describe('clear and help commands', () => {
     const all = createContext(adapter);
     await all.registry.get('help')!.execute(all.ctx, []);
     const listOut = all.output();
-    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help']) {
-      expect(listOut).toContain(cmd);
+    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help', 'man']) {
+      expect(listOut).toMatch(new RegExp(`^\\s+${cmd}\\s+`, 'm'));
     }
 
     const detail = createContext(adapter);
@@ -375,5 +375,80 @@ describe('clear and help commands', () => {
     const unknown = createContext(adapter);
     await unknown.registry.get('help')!.execute(unknown.ctx, ['nope']);
     expect(unknown.output()).toContain('help: unknown command: nope');
+  });
+});
+
+describe('man command', () => {
+  it('shows usage and lists available manuals when called without arguments or with extra args', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const empty = createContext(adapter);
+    await empty.registry.get('man')!.execute(empty.ctx, []);
+    const out = empty.output();
+    expect(out).toContain('usage: man <command>');
+    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help', 'man']) {
+      expect(out).toContain(cmd);
+    }
+
+    const extra = createContext(adapter);
+    await extra.registry.get('man')!.execute(extra.ctx, ['ls', 'cd']);
+    expect(extra.output()).toContain('usage: man <command>');
+  });
+
+  it('renders structured manual sections for each built-in command', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const lsMan = createContext(adapter);
+    await lsMan.registry.get('man')!.execute(lsMan.ctx, ['ls']);
+    const lsOut = lsMan.output();
+    expect(lsOut).toContain('NAME');
+    expect(lsOut).toContain('SYNOPSIS');
+    expect(lsOut).toContain('ls [-a | --all]');
+    expect(lsOut).toContain('DESCRIPTION');
+    expect(lsOut).toContain('OPTIONS');
+    expect(lsOut).toContain('-a, --all');
+    expect(lsOut).toContain('EXAMPLES');
+
+    for (const cmdName of ['cd', 'open', 'clear', 'help', 'man']) {
+      const res = createContext(adapter);
+      await res.registry.get('man')!.execute(res.ctx, [cmdName]);
+      const text = res.output();
+      expect(text).toContain('NAME');
+      expect(text).toContain('SYNOPSIS');
+      expect(text).toContain('DESCRIPTION');
+      expect(text).toContain(cmdName);
+    }
+  });
+
+  it('prints an error for unknown commands and falls back cleanly for commands without manual metadata', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const missing = createContext(adapter);
+    await missing.registry.get('man')!.execute(missing.ctx, ['nope']);
+    expect(missing.output()).toContain('No manual entry for nope');
+
+    const fallback = createContext(adapter);
+    fallback.registry.register({
+      name: 'ping',
+      summary: 'Check shell responsiveness',
+      usage: 'ping',
+      execute() {},
+    });
+    await fallback.registry.get('man')!.execute(fallback.ctx, ['ping']);
+    const text = fallback.output();
+    expect(text).toContain('ping - Check shell responsiveness');
+    expect(text).toContain('SYNOPSIS');
+    expect(text).toContain('DESCRIPTION');
+  });
+
+  it('completes command names by prefix on first argument only', async () => {
+    const adapter = new FakeBrowserAdapter();
+    const { ctx, registry } = createContext(adapter);
+
+    const matches = await registry.get('man')!.complete!(ctx, [], 'm');
+    expect(matches.map((m) => m.value)).toEqual(['man']);
+
+    const secondArg = await registry.get('man')!.complete!(ctx, ['ls'], '');
+    expect(secondArg).toEqual([]);
   });
 });

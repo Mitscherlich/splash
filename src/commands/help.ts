@@ -5,6 +5,12 @@ export const helpCommand: CommandDefinition = {
   name: 'help',
   summary: 'Show available commands or usage for a command',
   usage: 'help [command]',
+  manual: {
+    description:
+      'Lists all registered commands with one-line summaries, or prints concise usage for a specific command.',
+    examples: ['help', 'help open'],
+    notes: ['Use `man <command>` for full documentation, options, and examples.'],
+  },
 
   execute(ctx, args) {
     if (args.length === 0) {
