@@ -12,8 +12,19 @@ const ALLOWED_SCHEME_RE = /^(?:(?:https?|chrome|chrome-extension|file):\/\/|abou
 const LOCALHOST_RE = /^localhost(?::\d+)?(?:[/?#].*)?$/i;
 const IPV4_RE =
   /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?::\d+)?(?:[/?#].*)?$/;
+const IPV6_BRACKETED_RE = /^\[[0-9a-f:.]+\](?::\d+)?(?:[/?#].*)?$/i;
 const DOMAIN_RE =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}(?::\d+)?(?:[/?#].*)?$/i;
+
+function isValidBareIpv6Url(input: string): boolean {
+  if (!IPV6_BRACKETED_RE.test(input)) return false;
+  try {
+    const parsed = new URL(`http://${input}`);
+    return parsed.hostname.startsWith('[') && parsed.hostname.endsWith(']');
+  } catch {
+    return false;
+  }
+}
 
 export function resolveOpenTarget(args: string[]): OpenTarget {
   if (args.length === 0) {
@@ -29,7 +40,7 @@ export function resolveOpenTarget(args: string[]): OpenTarget {
     if (ALLOWED_SCHEME_RE.test(first)) {
       return { kind: 'url', url: first };
     }
-    if (LOCALHOST_RE.test(first) || IPV4_RE.test(first)) {
+    if (LOCALHOST_RE.test(first) || IPV4_RE.test(first) || isValidBareIpv6Url(first)) {
       return { kind: 'url', url: `http://${first}` };
     }
     if (DOMAIN_RE.test(first)) {

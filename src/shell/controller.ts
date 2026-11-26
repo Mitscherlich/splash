@@ -8,7 +8,7 @@ import type {
   CommandRegistry,
   CompletionItem,
 } from './registry';
-import { stringDisplayWidth, truncateToWidth } from './width';
+import { measureWrappedPosition, truncateToWidth } from './width';
 
 export interface TerminalIO {
   readonly cols: number;
@@ -409,10 +409,8 @@ export class ShellController {
 
   private moveToLineEndBeforeNewline(): void {
     const cols = Math.max(1, this.terminal.cols);
-    const promptWidth = stringDisplayWidth(PROMPT_TEXT);
-    const totalWidth = promptWidth + stringDisplayWidth(this.editor.buffer);
-    const endRow = totalWidth === 0 ? 0 : Math.floor((totalWidth - 1) / cols);
-    const rowsDown = endRow - this.renderedCursorRow;
+    const endPos = measureWrappedPosition(PROMPT_TEXT + this.editor.buffer, cols);
+    const rowsDown = endPos.row - this.renderedCursorRow;
     if (rowsDown > 0) {
       this.terminal.write(`\x1b[${rowsDown}B`);
     }
@@ -420,11 +418,9 @@ export class ShellController {
 
   private redrawLine(): void {
     const cols = Math.max(1, this.terminal.cols);
-    const promptWidth = stringDisplayWidth(PROMPT_TEXT);
     const buffer = this.editor.buffer;
-    const totalWidth = promptWidth + stringDisplayWidth(buffer);
-    const cursorWidth =
-      promptWidth + stringDisplayWidth(this.editor.beforeCursor());
+    const before = this.editor.beforeCursor();
+    const endPos = measureWrappedPosition(PROMPT_TEXT + buffer, cols);
 
     let seq = '';
     if (this.renderedCursorRow > 0) {
@@ -432,16 +428,21 @@ export class ShellController {
     }
     seq += `\r\x1b[J${ansi.accent(PROMPT_TEXT)}${buffer}`;
 
-    const endRow = totalWidth === 0 ? 0 : Math.floor((totalWidth - 1) / cols);
-    if (totalWidth > 0 && totalWidth % cols === 0 && cursorWidth === totalWidth) {
-      this.renderedCursorRow = endRow;
+    const atLineEnd = before.length === buffer.length;
+    if (atLineEnd && endPos.pendingWrap) {
+      this.renderedCursorRow = endPos.row;
       this.terminal.write(seq);
       return;
     }
 
-    const targetRow = Math.floor(cursorWidth / cols);
-    const targetCol = cursorWidth % cols;
-    const rowsUp = endRow - targetRow;
+    const rawTarget = atLineEnd
+      ? endPos
+      : measureWrappedPosition(PROMPT_TEXT + before, cols);
+    const targetRow =
+      !atLineEnd && rawTarget.pendingWrap ? rawTarget.row + 1 : rawTarget.row;
+    const targetCol = !atLineEnd && rawTarget.pendingWrap ? 0 : rawTarget.col;
+
+    const rowsUp = endPos.row - targetRow;
     if (rowsUp > 0) {
       seq += `\x1b[${rowsUp}A`;
     } else if (rowsUp < 0) {

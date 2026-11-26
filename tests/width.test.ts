@@ -2,18 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   charDisplayWidth,
   padRightToWidth,
+  sanitizeTerminalText,
   stringDisplayWidth,
   truncateToWidth,
 } from '../src/shell/width';
 
 describe('charDisplayWidth and stringDisplayWidth', () => {
-  it('counts ASCII as 1, CJK/fullwidth/emoji as 2, and combining/control as 0', () => {
+  it('matches xterm UnicodeV6 widths for ASCII, CJK, emoji, and combining chars', () => {
     expect(charDisplayWidth('a'.codePointAt(0)!)).toBe(1);
     expect(charDisplayWidth('中'.codePointAt(0)!)).toBe(2);
     expect(charDisplayWidth('Ａ'.codePointAt(0)!)).toBe(2);
     expect(charDisplayWidth('한'.codePointAt(0)!)).toBe(2);
-    expect(charDisplayWidth('🚀'.codePointAt(0)!)).toBe(2);
+    expect(charDisplayWidth('🚀'.codePointAt(0)!)).toBe(1);
+    expect(charDisplayWidth(0x303f)).toBe(1); // ideographic half fill space
     expect(charDisplayWidth(0x0301)).toBe(0); // combining acute accent
+    expect(charDisplayWidth(0xe0100)).toBe(0); // variation selector supplement
     expect(charDisplayWidth(0x0000)).toBe(0);
   });
 
@@ -21,7 +24,16 @@ describe('charDisplayWidth and stringDisplayWidth', () => {
     expect(stringDisplayWidth('hello')).toBe(5);
     expect(stringDisplayWidth('中文')).toBe(4);
     expect(stringDisplayWidth('hi中文!')).toBe(7);
-    expect(stringDisplayWidth('🚀a')).toBe(3);
+    expect(stringDisplayWidth('🚀a')).toBe(2);
+  });
+});
+
+describe('sanitizeTerminalText', () => {
+  it('strips C0 and C1 terminal control bytes including ESC while keeping printable text', () => {
+    expect(sanitizeTerminalText('Evil\x1b[2J\x1b]52;c;abc\x07标题\x9b31m')).toBe(
+      'Evil[2J]52;c;abc标题31m',
+    );
+    expect(sanitizeTerminalText('line1\r\nline2\tcol')).toBe('line1 line2 col');
   });
 });
 

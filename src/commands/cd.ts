@@ -1,5 +1,6 @@
 import { ansi } from '../shell/ansi';
 import type { CommandDefinition } from '../shell/registry';
+import { sanitizeTerminalText } from '../shell/width';
 
 const POSITIVE_INT_RE = /^[1-9]\d*$/;
 
@@ -59,7 +60,7 @@ export const cdCommand: CommandDefinition = {
       .filter((tab) => String(tab.id).startsWith(currentToken))
       .map((tab) => ({
         value: String(tab.id),
-        label: tab.title.trim() || '(untitled)',
+        label: sanitizeTerminalText(tab.title).trim() || '(untitled)',
       }));
   },
 };

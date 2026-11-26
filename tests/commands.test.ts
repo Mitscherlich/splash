@@ -110,6 +110,32 @@ describe('ls command', () => {
     await bad.registry.get('ls')!.execute(bad.ctx, ['-z']);
     expect(bad.output()).toContain('ls: unknown option: -z');
   });
+
+  it('sanitizes control characters from webpage titles and URLs in ls and cd completion', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        {
+          id: 1001,
+          windowId: 1,
+          index: 0,
+          active: true,
+          title: 'Safe\x1b[2JTitle\x07',
+          url: 'https://evil.example/\x1b]52;c;xx\x07',
+        },
+      ],
+    });
+
+    const { ctx, registry, rawOutput } = createContext(adapter, 100);
+    await registry.get('ls')!.execute(ctx, []);
+    expect(rawOutput()).not.toContain('\x1b[2J');
+    expect(rawOutput()).not.toContain('\x1b]52');
+    expect(rawOutput()).not.toContain('\x07');
+
+    const completions = await registry.get('cd')!.complete!(ctx, [], '');
+    expect(completions[0]?.label).toBe('Safe[2JTitle');
+  });
 });
 
 describe('cd command', () => {
@@ -239,6 +265,22 @@ describe('open command and resolveOpenTarget', () => {
     expect(resolveOpenTarget(['docs.rs/tokio/latest?q=1#top'])).toEqual({
       kind: 'url',
       url: 'https://docs.rs/tokio/latest?q=1#top',
+    });
+  });
+
+  it('prepends http:// for bare bracketed IPv6 literals and routes invalid bracketed strings to search', () => {
+    expect(resolveOpenTarget(['[::1]'])).toEqual({ kind: 'url', url: 'http://[::1]' });
+    expect(resolveOpenTarget(['[::1]:3000/api'])).toEqual({
+      kind: 'url',
+      url: 'http://[::1]:3000/api',
+    });
+    expect(resolveOpenTarget(['[2001:db8::1]/health'])).toEqual({
+      kind: 'url',
+      url: 'http://[2001:db8::1]/health',
+    });
+    expect(resolveOpenTarget(['[::1::2]:3000'])).toEqual({
+      kind: 'search',
+      query: '[::1::2]:3000',
     });
   });
 

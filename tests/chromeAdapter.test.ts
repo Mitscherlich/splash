@@ -141,6 +141,10 @@ describe('ChromeBrowserAdapter', () => {
 
     // Missing tab returns 'not_found' without throwing
     expect(await adapter.activateTab(999999)).toBe('not_found');
+
+    // Race: tabs.get succeeds, then tab closes before tabs.update runs
+    spies.tabsUpdate.mockRejectedValueOnce(new Error('Tab closed mid-flight'));
+    expect(await adapter.activateTab(101)).toBe('not_found');
   });
 
   it('opens URLs in active new tab and routes search through chrome.search.query', async () => {

@@ -189,6 +189,113 @@ describe('ShellController end-to-end', () => {
     controller.dispose();
   });
 
+  it('tracks wrapped wide-char boundary shifts and UnicodeV6 emoji cursor widths', async () => {
+    const adapter = new FakeBrowserAdapter();
+    // On 10 cols: "$ " (2) + "1234567" (7) puts cursor at col 9; inserting '中' (width 2)
+    // wraps '中' onto row 1 cols 0..1, placing cursor at row 1 col 2.
+    const narrowTerm = new FakeTerminal(10);
+    const narrowCtrl = new ShellController(narrowTerm, adapter, createDefaultRegistry());
+    await narrowCtrl.start();
+
+    await narrowCtrl.handleData('1234567');
+    narrowTerm.resetCapture();
+    await narrowCtrl.handleData('中');
+    // End of line is row 1 col 2, so cursor must move to col 2 (\x1b[2C), NOT col 1 (\x1b[1C)
+    expect(narrowTerm.rawOutput()).toContain('\x1b[2C');
+
+    // Backspace from row 1 must move up 1 row (\x1b[1A) so no ghost line remains
+    narrowTerm.resetCapture();
+    await narrowCtrl.handleData('\x7f');
+    expect(narrowTerm.rawOutput()).toContain('\x1b[1A');
+    narrowCtrl.dispose();
+
+    // Emoji matches xterm UnicodeV6 width (1): "$ " (2) + "open " (5) + "🚀" (1) = col 8
+    const emojiTerm = new FakeTerminal(80);
+    const emojiCtrl = new ShellController(emojiTerm, adapter, createDefaultRegistry());
+    await emojiCtrl.start();
+    await emojiCtrl.handleData('open 🚀a');
+    emojiTerm.resetCapture();
+    await emojiCtrl.handleData('\x1b[D');
+    expect(emojiTerm.rawOutput()).toContain('\x1b[8C');
+    emojiCtrl.dispose();
+  });
+
+  it('handles mid-line, leading-space, unclosed-quote, and 0/1-tab Tab completion safely', async () => {
+    const emptyAdapter = new FakeBrowserAdapter({ tabs: [] });
+    const term = new FakeTerminal(80);
+    const ctrl = new ShellController(term, emptyAdapter, createDefaultRegistry());
+    await ctrl.start();
+
+    // 0-tab cd completion is a clean no-op
+    await ctrl.handleData('cd ');
+    term.resetCapture();
+    await ctrl.handleData('\t');
+    expect(term.rawOutput()).toBe('');
+    await ctrl.handleData('\x03');
+
+    // Leading whitespace command completion ("  op" + Tab -> "  open ")
+    await ctrl.handleData('  op');
+    await ctrl.handleData('\t');
+    await ctrl.handleData('example.com');
+    await ctrl.handleData('\r');
+    expect(emptyAdapter.openedUrls).toEqual(['https://example.com']);
+
+    // Unclosed quote completion is a no-op
+    await ctrl.handleData('open "unclosed');
+    term.resetCapture();
+    await ctrl.handleData('\t');
+    expect(term.rawOutput()).toBe('');
+    await ctrl.handleData('\x03');
+
+    // Mid-line completion keeps trailing text intact
+    await ctrl.handleData('op docs.rs');
+    // Move cursor right after "op" (8 chars left from end)
+    for (let i = 0; i < 8; i++) {
+      await ctrl.handleData('\x1b[D');
+    }
+    await ctrl.handleData('\t');
+    await ctrl.handleData('\r');
+    expect(emptyAdapter.openedUrls).toEqual(['https://example.com', 'https://docs.rs']);
+
+    ctrl.dispose();
+  });
+
+  it('serializes keystrokes queued while an async command awaits browser promises', async () => {
+    let releaseListTabs!: () => void;
+    const listTabsGate = new Promise<void>((resolve) => {
+      releaseListTabs = resolve;
+    });
+    const baseAdapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        { id: 1001, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab' },
+        { id: 1002, windowId: 1, index: 1, active: false, title: 'Target', url: 'https://target.dev' },
+      ],
+    });
+    const origListTabs = baseAdapter.listTabs.bind(baseAdapter);
+    baseAdapter.listTabs = async (scope) => {
+      await listTabsGate;
+      return origListTabs(scope);
+    };
+
+    const term = new FakeTerminal(80);
+    const ctrl = new ShellController(term, baseAdapter, createDefaultRegistry());
+    await ctrl.start();
+
+    await ctrl.handleData('ls');
+    const lsPromise = ctrl.handleData('\r');
+    // Queue next command while ls is still awaiting listTabs
+    const cdTextPromise = ctrl.handleData('cd 1002');
+    const cdEnterPromise = ctrl.handleData('\r');
+    expect(baseAdapter.activatedTabIds).toEqual([]);
+
+    releaseListTabs();
+    await Promise.all([lsPromise, cdTextPromise, cdEnterPromise]);
+    expect(baseAdapter.activatedTabIds).toEqual([1002]);
+    ctrl.dispose();
+  });
+
   it('persists history on execute and syncs external history changes across tabs', async () => {
     const adapter = new FakeBrowserAdapter({ history: ['ls'] });
     const term = new FakeTerminal(80);

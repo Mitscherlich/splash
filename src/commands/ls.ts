@@ -1,7 +1,11 @@
 import type { TabInfo } from '../adapter/types';
 import { ansi } from '../shell/ansi';
 import type { CommandDefinition } from '../shell/registry';
-import { padRightToWidth, truncateToWidth } from '../shell/width';
+import {
+  padRightToWidth,
+  sanitizeTerminalText,
+  truncateToWidth,
+} from '../shell/width';
 
 const NARROW_VIEWPORT_COLS = 60;
 
@@ -81,12 +85,12 @@ export const lsCommand: CommandDefinition = {
         ? ` ${ansi.muted((windowLabels.get(tab.windowId) ?? '').padEnd(winTagWidth, ' '))}`
         : '';
 
-      const rawTitle = tab.title.trim() || '(untitled)';
+      const rawTitle = sanitizeTerminalText(tab.title).trim() || '(untitled)';
       const titleText = truncateToWidth(rawTitle, titleCols);
 
       if (showUrl) {
         const paddedTitle = padRightToWidth(titleText, titleCols);
-        const urlText = truncateToWidth(tab.url, urlCols);
+        const urlText = truncateToWidth(sanitizeTerminalText(tab.url), urlCols);
         ctx.writeln(`${marker} ${idText}${winPart}  ${paddedTitle}  ${ansi.muted(urlText)}`);
       } else {
         ctx.writeln(`${marker} ${idText}${winPart}  ${titleText}`);
