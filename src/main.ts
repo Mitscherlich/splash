@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { ChromeBrowserAdapter } from './adapter/chromeAdapter';
 import { createDefaultRegistry } from './commands';
+import { DEFAULT_CONFIG } from './config/schema';
+import { HeaderManager } from './header/headerManager';
 import { ShellController } from './shell/controller';
 import {
   CopyOnSelectController,
@@ -21,6 +23,7 @@ function boot(): void {
   if (!container) {
     throw new Error('Missing #terminal mount element');
   }
+  const headerEl = document.getElementById('splash-header');
 
   const adapter = new ChromeBrowserAdapter();
 
@@ -43,7 +46,33 @@ function boot(): void {
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   terminal.open(container);
-  fitAddon.fit();
+
+  const fit = () => {
+    fitAddon.fit();
+  };
+
+  fit();
+
+  const headerManager = headerEl
+    ? new HeaderManager(headerEl, {
+        onLayoutChange: () => {
+          requestAnimationFrame(fit);
+        },
+      })
+    : null;
+
+  void adapter
+    .loadConfig()
+    .then((config) => {
+      headerManager?.apply(config);
+    })
+    .catch(() => {
+      headerManager?.apply(DEFAULT_CONFIG);
+    });
+
+  const unsubscribeConfig = adapter.onConfigChanged((config) => {
+    headerManager?.apply(config);
+  });
 
   const copyOnSelect = new CopyOnSelectController({
     getSelection: () => terminal.getSelection(),
@@ -71,11 +100,8 @@ function boot(): void {
   focusTerminal();
   window.addEventListener('focus', focusTerminal);
   container.addEventListener('mousedown', handleMouseDown);
+  headerEl?.addEventListener('mousedown', focusTerminal);
   window.addEventListener('mouseup', handleMouseUp);
-
-  const fit = () => {
-    fitAddon.fit();
-  };
 
   const resizeObserver = new ResizeObserver(fit);
   resizeObserver.observe(container);
@@ -90,7 +116,10 @@ function boot(): void {
     window.removeEventListener('resize', fit);
     window.removeEventListener('focus', focusTerminal);
     container.removeEventListener('mousedown', handleMouseDown);
+    headerEl?.removeEventListener('mousedown', focusTerminal);
     window.removeEventListener('mouseup', handleMouseUp);
+    unsubscribeConfig();
+    headerManager?.dispose();
     selectionSubscription.dispose();
     controller.dispose();
     terminal.dispose();
