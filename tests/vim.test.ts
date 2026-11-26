@@ -196,4 +196,59 @@ describe('VimSession', () => {
     await vim.handleData(':q\r');
     expect(host.isExited()).toBe(true);
   });
+
+  it('cancels Command mode cleanly on Esc and Ctrl+C, preserves dirty on failed :w, and aligns CJK cursor columns', async () => {
+    const host = createSessionHost(80, 12);
+    const onSave = vi.fn(async (): Promise<VimSaveResult> => ({
+      ok: false,
+      error: 'line 1: invalid value',
+    }));
+    const vim = new VimSession({
+      filePath: '/etc/splash.d/config',
+      initialContent: 'a中文b',
+      onSave,
+    });
+
+    vim.start(host.io);
+
+    // Move right onto '中' (gutter " 1 " = 3 cols -> 'a' is col 4, '中' is col 5),
+    // then right onto '文' (col 5 + width('中') 2 = col 7)
+    host.clearCapture();
+    await vim.handleData('l');
+    expect(host.raw()).toContain('\x1b[1;5H');
+
+    host.clearCapture();
+    await vim.handleData('l');
+    expect(host.raw()).toContain('\x1b[1;7H');
+
+    // Delete '文' with x -> 'a中b', cursor now on 'b' at col 7; move left onto '中' at col 5
+    await vim.handleData('x');
+    host.clearCapture();
+    await vim.handleData('h');
+    expect(host.raw()).toContain('\x1b[1;5H');
+
+    // Esc cancels Command mode without invoking onSave
+    host.clearCapture();
+    await vim.handleData(':wq\x1b');
+    expect(host.isExited()).toBe(false);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(host.plain()).toContain('NORMAL');
+
+    // Ctrl+C cancels Command mode without invoking onSave
+    host.clearCapture();
+    await vim.handleData(':q!\x03');
+    expect(host.isExited()).toBe(false);
+    expect(host.plain()).toContain('NORMAL');
+
+    // Failed :w keeps dirty [+] marker and stays in Vim
+    host.clearCapture();
+    await vim.handleData(':w\r');
+    expect(onSave).toHaveBeenCalledWith('a中b');
+    expect(host.isExited()).toBe(false);
+    expect(host.plain()).toContain('[+]');
+    expect(host.plain()).toContain('line 1: invalid value');
+
+    await vim.handleData(':q!\r');
+    expect(host.isExited()).toBe(true);
+  });
 });

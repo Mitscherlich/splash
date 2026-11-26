@@ -76,3 +76,12 @@ export class CopyOnSelectController {
     });
   }
 }
+
+export function createHeaderMouseDownHandler(
+  focusTerminal: () => void,
+): (event: { preventDefault(): void }) => void {
+  return (event) => {
+    event.preventDefault();
+    focusTerminal();
+  };
+}

@@ -8,6 +8,7 @@ import { HeaderManager } from './header/headerManager';
 import { ShellController } from './shell/controller';
 import {
   CopyOnSelectController,
+  createHeaderMouseDownHandler,
   createTabLinkHandler,
 } from './shell/interactions';
 import './style.css';
@@ -97,10 +98,12 @@ function boot(): void {
     terminal.focus();
   };
 
+  const handleHeaderMouseDown = createHeaderMouseDownHandler(focusTerminal);
+
   focusTerminal();
   window.addEventListener('focus', focusTerminal);
   container.addEventListener('mousedown', handleMouseDown);
-  headerEl?.addEventListener('mousedown', focusTerminal);
+  headerEl?.addEventListener('mousedown', handleHeaderMouseDown);
   window.addEventListener('mouseup', handleMouseUp);
 
   const resizeObserver = new ResizeObserver(fit);
@@ -116,7 +119,7 @@ function boot(): void {
     window.removeEventListener('resize', fit);
     window.removeEventListener('focus', focusTerminal);
     container.removeEventListener('mousedown', handleMouseDown);
-    headerEl?.removeEventListener('mousedown', focusTerminal);
+    headerEl?.removeEventListener('mousedown', handleHeaderMouseDown);
     window.removeEventListener('mouseup', handleMouseUp);
     unsubscribeConfig();
     headerManager?.dispose();

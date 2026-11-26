@@ -10,6 +10,7 @@ class FakeTerminal implements TerminalIO {
   writes: string[] = [];
   clears = 0;
   private listeners = new Set<(data: string) => void>();
+  private resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
 
   constructor(cols = 80, rows = 24) {
     this.cols = cols;
@@ -35,6 +36,25 @@ class FakeTerminal implements TerminalIO {
         this.listeners.delete(listener);
       },
     };
+  }
+
+  onResize(
+    listener: (size: { cols: number; rows: number }) => void,
+  ): { dispose(): void } {
+    this.resizeListeners.add(listener);
+    return {
+      dispose: () => {
+        this.resizeListeners.delete(listener);
+      },
+    };
+  }
+
+  triggerResize(cols: number, rows: number): void {
+    this.cols = cols;
+    this.rows = rows;
+    for (const listener of this.resizeListeners) {
+      listener({ cols, rows });
+    }
   }
 
   plainOutput(): string {
@@ -337,6 +357,11 @@ describe('ShellController end-to-end', () => {
     const vimRun = controller.handleData('\r');
     // Allow microtasks for loadConfig + VimSession.start()
     await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Terminal resize while Vim is active re-renders status bar at new bottom row (15)
+    term.resetCapture();
+    term.triggerResize(60, 16);
+    expect(term.rawOutput()).toContain('\x1b[15;1H');
 
     // Line 3 is "header.piece = big-text": move down 2 lines (jj), delete line (dd),
     // open line above (O), type "header.piece = donut", Esc, then :wq

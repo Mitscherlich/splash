@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   CopyOnSelectController,
+  createHeaderMouseDownHandler,
   createTabLinkHandler,
   parseTabLinkUri,
 } from '../src/shell/interactions';
@@ -124,5 +125,22 @@ describe('CopyOnSelectController', () => {
     expect(() => ctrl.onSelectionChange()).not.toThrow();
     await Promise.resolve();
     expect(writeClipboard).toHaveBeenCalledWith('copied');
+  });
+});
+
+describe('createHeaderMouseDownHandler', () => {
+  it('calls preventDefault so clicking non-focusable header does not blur terminal, then focuses terminal', () => {
+    const order: string[] = [];
+    const handler = createHeaderMouseDownHandler(() => {
+      order.push('focus');
+    });
+
+    handler({
+      preventDefault() {
+        order.push('preventDefault');
+      },
+    });
+
+    expect(order).toEqual(['preventDefault', 'focus']);
   });
 });
