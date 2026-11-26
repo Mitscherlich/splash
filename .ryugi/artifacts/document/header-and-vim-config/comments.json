@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "threads": [
+    {
+      "id": "SiVyoI-plT",
+      "anchor": {
+        "blockId": "bqrUbBFS",
+        "quote": "",
+        "ask": "approve",
+        "choice": "approve",
+        "answer": null
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T19:35:52.507Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "fuYQibNoHN",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "approve",
+          "at": "2026-11-26T19:35:52.507Z"
+        }
+      ]
+    },
+    {
+      "id": "ihXs3cPiWF",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "approve"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T19:35:53.140Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "VOC7Kgwkv1",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-26T19:35:53.140Z"
+        }
+      ]
+    },
+    {
+      "id": "ZApNo069Cc",
+      "anchor": {
+        "blockId": "bqrUbBFS",
+        "quote": "",
+        "ask": "approve",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T19:36:54.781Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "4kHHenuqwP",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "设计已批准，已写入规格指针并提交，进入实现阶段。",
+          "at": "2026-11-26T19:36:54.781Z"
+        }
+      ]
+    }
+  ]
+}

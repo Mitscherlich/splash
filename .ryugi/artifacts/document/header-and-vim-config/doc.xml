@@ -1,0 +1,260 @@
+<doc ryugi-attribution="eyJjcmVhdGVkQnkiOiJBbnRpZ3Jhdml0eSIsImRpZ2VzdCI6Ijg1MmRiYTg0YjcyNDBlMTQxZmMwYWZjZjY3NTg5ZTMxYTE5N2M3NTFmODM2MGRhNTFiNzc0MzRiMTk3ZjUwNzEifQ">
+  <h1 id="NUnfFHUL">Splash 页头动画（ascii.rest）与 vim /etc/splash.d/config 配置系统设计文档</h1>
+  <p id="LAcAIs01">本文档定义如何将 <code>ascii.rest</code>（<code>github.com/bas3line/ascii</code>）的四套页头动画静态打包接入 Splash Chrome 新标签页扩展，并通过终端内 <code>vim /etc/splash.d/config</code> 与 <code>cat /etc/splash.d/config</code> 提供完整的纯键盘配置与即时热更新能力。</p>
+  <h2 id="hBVJfuRw">1. 背景与目标（Why）</h2>
+  <p id="I7SgzNtN">用户在交互预览页（<ref html="header-animation" to="cdDfAaJYopD7d0Dr9ejwd">页头动画预览</ref>）查看四套 <code>ascii.rest</code> 动画后，希望全部保留并通过极客原生的 <code>vim /etc/splash.d/config</code> 入口随时切换和调优页头动画。将配置暴露为虚拟文件并直接在终端内用微型 Vim 编辑，既延续了 Splash“零 GUI 面板、纯命令行工作流”的产品气质，也为后续扩展更多用户配置项（如主题、提示符、字号）打下统一基础。</p>
+  <h3 id="_-1k3fLF">目标（Goals）</h3>
+  <ul id="-VCdyF57">
+    <li>通过 <code>npm install ascii.rest</code> 本地静态打包全部 4 套动画（<code>big-text</code>、<code>night-coast</code>、<code>aurora-fjord</code>、<code>donut</code>）以及关闭选项 <code>none</code>，零外网请求、完全遵守 Chrome MV3 CSP。</li>
+    <li>在 <code>newtab.html</code> 顶部挂载响应式页头容器（支持 <code>compact</code> / <code>standard</code> / <code>spacious</code> 高度、单色 <code>mono</code>、底部分隔线与自定义 <code>big-text</code> 文案），并与下方 <code>@xterm/xterm</code> 终端通过 Flex + <code>ResizeObserver</code> + <code>FitAddon</code> 无缝协同，不遮挡、不裁切。</li>
+    <li>实现虚拟配置文件 <code>/etc/splash.d/config</code>（持久化于 <code>chrome.storage.local</code> 的 <code>splash.config</code>，多新标签页通过 <code>chrome.storage.onChanged</code> 实时热同步）。</li>
+    <li>在终端内实现交替屏幕（Alternate Screen）微型模态 <code>vim</code> 编辑器（支持 Normal / Insert / Command 模式、行号、状态栏、保存校验、即时热生效与未保存退出保护），并配套只读 <code>cat /etc/splash.d/config</code>、<code>Tab</code> 路径补全及 <code>man vim</code> / <code>man cat</code> 手册。</li>
+  </ul>
+  <h3 id="2UJ6GQkf">非目标（Non-Goals）</h3>
+  <ul id="nV8njsrr">
+    <li>不实现通用浏览器文件系统（除 <code>/etc/splash.d/config</code> 外，不支持读写任意路径或创建新文件）。</li>
+    <li>不引入 React、GUI 设置弹窗、Options Page 或 <code>ascii.rest/element</code>（避免其注入指向外网 <code>ascii.rest</code> 的远程 <code>@font-face</code>）。</li>
+    <li>不打包 <code>ascii.rest</code> 全量 242 个 piece（仅按需静态导入选定的 4 个 piece，保持扩展包体轻量）。</li>
+    <li><code>vim</code> 不实现高级特性（如正则查找替换 <code>:%s</code>、宏录制、可视模式 <code>v</code>、分屏、多缓冲区、剪贴板寄存器）。</li>
+  </ul>
+  <h2 id="_bVb0oP-">2. 已确定决策与默认约定</h2>
+  <table id="X8LHlS20">
+    <tr>
+      <th>
+        <p>维度</p>
+      </th>
+      <th>
+        <p>决策</p>
+      </th>
+      <th>
+        <p>来源</p>
+      </th>
+    </tr>
+    <tr>
+      <td>
+        <p>动画库与动画集合</p>
+      </td>
+      <td>
+        <p>安装 <code>ascii.rest</code>，本地静态打包 <code>big-text</code>、<code>night-coast</code>、<code>aurora-fjord</code>、<code>donut</code> 四套动画 + <code>none</code> 关闭项</p>
+      </td>
+      <td>
+        <p>用户指定（“我全都要”）</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>配置入口</p>
+      </td>
+      <td>
+        <p>通过 <code>vim /etc/splash.d/config</code> 进入终端内编辑</p>
+      </td>
+      <td>
+        <p>用户指定</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>配置文件格式</p>
+      </td>
+      <td>
+        <p>带 <code>#</code> 注释的 <code>key = value</code> 文本格式（每项附合法值提示，便于在 Vim 中免转义手改）</p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>默认页头配置</p>
+      </td>
+      <td>
+        <p><code>header.piece = big-text</code>、<code>header.text = SPLASH</code>、<code>header.density = compact</code>、<code>header.mono = false</code>、<code>header.divider = true</code></p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>辅助只读命令</p>
+      </td>
+      <td>
+        <p>新增 <code>cat /etc/splash.d/config</code> 方便不进 Vim 直接查看当前配置，且 <code>vim</code> / <code>cat</code> 均支持 <code>Tab</code> 补全路径</p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>动画挂载方式</p>
+      </td>
+      <td>
+        <p>直接调用 <code>ascii.rest</code> 的 <code>mount(el, piece, options)</code>（彩色场景在 <code>mono=false</code> 用 <code>&lt;canvas&gt;</code>，其余用 <code>&lt;pre&gt;</code>），零外网字体/脚本请求</p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+  </table>
+  <h2 id="ptn6J_ZM">3. 配置文件规格（<code>/etc/splash.d/config</code>）</h2>
+  <p id="zcyzkKhv">配置对象 <code>SplashConfig</code> 以 JSON 持久化到 <code>chrome.storage.local</code>（key 为 <code>splash.config</code>），打开 <code>vim</code> 或执行 <code>cat</code> 时由规范化序列化器渲染为带注释的可读文本：</p>
+  <codeblock id="67my4T9S" lang="ini"># Splash configuration (/etc/splash.d/config)
+# header.piece: big-text | night-coast | aurora-fjord | donut | none
+header.piece = big-text
+# header.text: banner text for big-text (1-14 chars)
+header.text = SPLASH
+# header.density: compact | standard | spacious
+header.density = compact
+# header.mono: true | false (render colored scenes in single theme ink)
+header.mono = false
+# header.divider: true | false (bottom hairline between header and terminal)
+header.divider = true</codeblock>
+  <h3 id="rQrMU50e">解析与校验规则</h3>
+  <ul id="GRltHYX2">
+    <li>忽略空行与以 <code>#</code> 开头的注释行；每条有效配置行按首个 <code>=</code> 拆分为 <code>key</code> 和 <code>value</code> 并去除首尾空白。</li>
+    <li>所有字段均可选覆盖：未写出的字段回退到默认值；若出现未知 key、缺少 <code>=</code> 或非法取值，返回带行号的明确错误（如 <code>line 3: invalid header.piece &quot;foo&quot;</code>），拒绝覆盖存储。</li>
+    <li><code>header.text</code> 经控制字符过滤后要求非空且长度 1–14 个字符；超长或为空报错提示。</li>
+    <li>读取 <code>chrome.storage.local</code> 时做防御性合并（坏字段自动回退默认值，兼容未来版本新增字段）。</li>
+  </ul>
+  <h2 id="Vxst0bY7">4. 页头动画渲染器（<code>HeaderManager</code>）</h2>
+  <ul id="-gaCL9b7">
+    <li><b>DOM 布局</b>：将 <code>newtab.html</code> 改为纵向 Flex 布局容器 <code>#app</code>（<code>height: 100%; display: flex; flex-direction: column;</code>）：上方为 <code>&lt;header id=&quot;splash-header&quot;&gt;</code>（<code>flex: 0 0 auto</code>），下方为 <code>&lt;div id=&quot;terminal&quot;&gt;</code>（<code>flex: 1 1 auto; min-height: 0</code>）。页头高度或显隐变化时自动触发 <code>FitAddon.fit()</code> 重算终端行列数。</li>
+    <li><b>高度档位</b>：<code>compact</code> 92px、<code>standard</code> 128px、<code>spacious</code> 168px；当 <code>header.piece === &quot;none&quot;</code> 时隐藏页头（<code>display: none</code>），终端占满全部视口。</li>
+    <li>
+      <b>渲染元素选择</b>：
+      <ul>
+        <li><code>big-text</code>：左侧 <code>&lt;pre&gt;</code> 挂载 <code>bigText</code> piece（传入 <code>{ text: config.header.text }</code>），右侧展示极简元信息（<code>splash · newtab shell</code> / <code>ls · cd · open · man</code>）。</li>
+        <li><code>night-coast</code> / <code>aurora-fjord</code>：<code>header.mono === false</code> 时在 <code>&lt;canvas&gt;</code> 上挂载全彩场景；<code>header.mono === true</code> 时在 <code>&lt;pre&gt;</code> 上以主题青色 <code>#58a6ff</code> 单色渲染，左下角叠放极简标签 <code>splash · newtab shell</code>。</li>
+        <li><code>donut</code>：左侧 <code>&lt;pre&gt;</code> 挂载 <code>donut</code>，右侧展示 <code>SPLASH</code> 标题与命令提示。</li>
+      </ul>
+    </li>
+    <li><b>生命周期与焦点</b>：每次应用新配置前必须调用上一次 <code>mount()</code> 返回的 <code>stop()</code> 释放动画循环与观察器；点击页头区域自动将焦点交回 <code>terminal.focus()</code>。尊重系统 <code>prefers-reduced-motion</code>（<code>ascii.rest</code> <code>mount()</code> 默认内置支持）。</li>
+  </ul>
+  <h2 id="B5AG8IxC">5. 终端内 <code>vim</code> 模态编辑器与 <code>cat</code> 指令</h2>
+  <h3 id="KPmV73jI">5.1 可扩展交互会话抽象（<code>InteractiveSession</code>）</h3>
+  <p id="W5KAc6LR">为避免 <code>ShellController</code> 与 Vim 逻辑强耦合，在 <code>CommandContext</code> 上提供 <code>runSession(session: InteractiveSession): Promise&lt;void&gt;</code>。交互会话激活期间，<code>ShellController</code> 将终端的 <code>onData</code> 原始输入流与窗口 <code>onResize(cols, rows)</code> 通知转交给当前会话；会话结束退出后恢复正常提示符与命令队列。</p>
+  <mermaid id="F4zhbuOJ">flowchart LR
+  User[&quot;键盘 / Resize&quot;] --&gt; XTerm[&quot;@xterm/xterm&quot;]
+  XTerm --&gt; Controller[&quot;ShellController&quot;]
+  Controller --&gt;|普通模式| LineEditor[&quot;LineEditor + CommandRegistry&quot;]
+  Controller --&gt;|交互会话| Vim[&quot;VimSession (Alternate Screen)&quot;]
+  Vim --&gt;|:w / :wq| ConfigParser[&quot;parseConfigText 校验&quot;]
+  ConfigParser --&gt;|合法| Adapter[&quot;BrowserAdapter.saveConfig&quot;]
+  Adapter --&gt; Storage[&quot;chrome.storage.local (splash.config)&quot;]
+  Storage --&gt;|onChanged| Header[&quot;HeaderManager 热更新 + FitAddon.fit()&quot;]</mermaid>
+  <h3 id="SR8MGBtA">5.2 <code>vim</code> 指令行为</h3>
+  <ul id="Qeyqfrt_">
+    <li>
+      <b>路径与补全</b>：
+      <ul>
+        <li><code>vim /etc/splash.d/config</code>：加载当前配置并进入交替屏幕编辑。</li>
+        <li><code>vim</code>（无参数）：输出 <code>usage: vim /etc/splash.d/config</code>。</li>
+        <li><code>vim &lt;其他路径&gt;</code>：输出错误 <code>vim: only /etc/splash.d/config is editable</code>。</li>
+        <li><code>Tab</code> 补全：输入 <code>vim </code> 或路径前缀按 <code>Tab</code> 自动补全 <code>/etc/splash.d/config</code>。</li>
+      </ul>
+    </li>
+    <li>
+      <b>屏幕与渲染</b>：
+      <ul>
+        <li>进入时写入 <code>\x1b[?1049h</code> 切换至交替屏幕（保留原终端历史输出），退出时写入 <code>\x1b[?1049l</code> 完整还原原屏幕。</li>
+        <li>主内容区（第 <code>1 .. rows-2</code> 行）显示带行号的文本与空行波浪线 <code>~</code>，支持随光标上下滚动，长行按东亚宽字符宽度安全截断/光标对齐。</li>
+        <li>倒数第 2 行为反色状态栏：模式标识（<code>NORMAL</code> / <code>INSERT</code> / <code>COMMAND</code>）、文件路径、修改标记 <code>[+]</code> 与 <code>行:列</code>。</li>
+        <li>最底行为命令行（<code>:w</code> 等）与提示/错误信息栏。</li>
+      </ul>
+    </li>
+    <li>
+      <b>快捷键与命令</b>：
+      <ul>
+        <li><b>Normal 模式</b>：<code>h</code>/<code>j</code>/<code>k</code>/<code>l</code> 与方向键移动、<code>0</code>/<code>$</code> 行首/行尾、<code>gg</code>/<code>G</code> 首行/末行、<code>i</code>/<code>a</code>/<code>I</code>/<code>A</code>/<code>o</code>/<code>O</code> 进入 Insert、<code>x</code> 删除字符、<code>dd</code> 删除整行、<code>u</code> 撤销、<code>:</code> 进入 Command、<code>ZZ</code> 保存退出、<code>ZQ</code> 放弃退出。</li>
+        <li><b>Insert 模式</b>：输入普通 ASCII/中文字符、<code>Backspace</code>（行首合并至上一行）、<code>Delete</code>、<code>Enter</code> 换行拆分、方向键移动、<code>Esc</code> 返回 Normal 模式。</li>
+        <li><b>Command 模式</b>：<code>:w</code>（校验并保存，立即热更新页头）、<code>:q</code>（有未保存改动时提示 <code>E37: No write since last change (add ! to override)</code>）、<code>:q!</code>（强制退出放弃修改）、<code>:wq</code> / <code>:x</code>（校验保存并退出，校验失败则留在编辑器内显示行号错误）、<code>Esc</code> / <code>Ctrl+C</code> 取消。</li>
+      </ul>
+    </li>
+  </ul>
+  <h3 id="4GR12YuX">5.3 <code>cat</code> 指令与手册更新</h3>
+  <ul id="TTRLPD-d">
+    <li><code>cat /etc/splash.d/config</code> 输出当前规范化配置文本；无参数提示用法；其他路径提示 <code>cat: &lt;path&gt;: No such file or directory</code>；支持 <code>Tab</code> 补全 <code>/etc/splash.d/config</code>。</li>
+    <li><code>vim</code> 与 <code>cat</code> 均注册至 <code>createDefaultRegistry()</code> 并携带完整 <code>manual</code> 元数据，<code>help</code> 与 <code>man vim</code> / <code>man cat</code> 自动生效。</li>
+  </ul>
+  <h2 id="t4ytnRmS">6. 接口与模块变更</h2>
+  <table id="swoF6eOu">
+    <tr>
+      <th>
+        <p>文件</p>
+      </th>
+      <th>
+        <p>职责</p>
+      </th>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/config/schema.ts</code></p>
+      </td>
+      <td>
+        <p><code>SplashConfig</code> 类型、默认值、<code>CONFIG_PATH = &apos;/etc/splash.d/config&apos;</code>、<code>serializeConfig()</code>、<code>parseConfigText()</code>、<code>normalizeConfig()</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/adapter/types.ts</code> &amp; <code>chromeAdapter.ts</code></p>
+      </td>
+      <td>
+        <p><code>BrowserAdapter</code> 新增 <code>loadConfig()</code>、<code>saveConfig(config)</code>、<code>onConfigChanged(listener)</code>（复用 <code>storage</code> 权限，无需新增 Chrome 权限）</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/header/headerManager.ts</code></p>
+      </td>
+      <td>
+        <p>静态映射 4 套 <code>ascii.rest</code> piece，根据 <code>SplashConfig</code> 挂载/卸载 <code>&lt;pre&gt;</code> 或 <code>&lt;canvas&gt;</code>，并通知终端重算尺寸</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/shell/vimSession.ts</code></p>
+      </td>
+      <td>
+        <p>纯状态机 + ANSI 交替屏渲染的微型 Vim 会话（完全可在 Vitest 中驱动按键序列单测）</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/shell/controller.ts</code> &amp; <code>registry.ts</code></p>
+      </td>
+      <td>
+        <p><code>TerminalIO</code> 新增 <code>rows</code> 与 <code>onResize</code>，<code>CommandContext</code> 新增 <code>runSession()</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/commands/vim.ts</code> &amp; <code>cat.ts</code> &amp; <code>index.ts</code></p>
+      </td>
+      <td>
+        <p>注册 <code>vim</code> 与 <code>cat</code> 指令及手册</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>newtab.html</code> &amp; <code>src/style.css</code> &amp; <code>src/main.ts</code></p>
+      </td>
+      <td>
+        <p>装配 <code>#app</code> Flex 容器、<code>HeaderManager</code> 初始化与跨标签配置热同步</p>
+      </td>
+    </tr>
+  </table>
+  <h2 id="AJRfgPiM">7. 留给实现阶段决定的细节</h2>
+  <ul id="F5VoYbl9">
+    <li><code>vim</code> 撤销栈深度上限（如 100 步）及单行超出终端宽度时的水平裁切细节。</li>
+    <li><code>HeaderManager</code> 中 <code>big-text</code> / <code>donut</code> 在三档高度下的精确字号与行高微调（与预览页一致）。</li>
+    <li>Vitest 测试文件拆分与 <code>FakeBrowserAdapter</code> 配置持久化桩实现。</li>
+  </ul>
+  <h2 id="ijY5QkC0">8. 对话使用的 Artifact 记录</h2>
+  <ul id="uljSGv-S">
+    <li><b>交互预览页</b>：<ref html="header-animation" to="cdDfAaJYopD7d0Dr9ejwd">页头动画预览</ref>（<code>.ryugi/artifacts/html/header-animation/index.html</code>）——用于实时预览 <code>ascii.rest</code> 四套页头动画（<code>big-text</code>、<code>night-coast</code>、<code>aurora-fjord</code>、<code>donut</code>）及高度/单色/分隔线调节，用户在此决定全部保留并通过 <code>vim /etc/splash.d/config</code> 切换。</li>
+    <li><b>设计文档</b>：<code>document/header-and-vim-config</code>（<code>.ryugi/artifacts/document/header-and-vim-config/doc.xml</code>）。</li>
+  </ul>
+  <p id="bqrUbBFS">请确认是否批准这份设计文档进入实现阶段：<ask id="approve"><option value="approve">批准，按此设计开始实现</option><option value="revise">需要修改（请在文档中留言说明改动点）</option></ask></p>
+</doc>
+
