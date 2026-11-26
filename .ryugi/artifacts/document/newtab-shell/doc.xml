@@ -1,0 +1,460 @@
+<doc ryugi-attribution="eyJjcmVhdGVkQnkiOiJBbnRpZ3Jhdml0eSIsImRpZ2VzdCI6IjFkNTliODE0ZmU1OWU1NDg2MDM2ZmNiODY1ZWUwMDAzMzM3YmU5YzRiOTFmZDAwYTBlYWFjMzNhOThkNTg0OWIifQ">
+  <h1 id="8OD4aaYL">Splash：Chrome 新标签页终端扩展设计文档</h1>
+  <p id="8dtN8rXD">本文档是 <code>splash</code> Chrome 新标签页终端扩展 v1 的完整设计规格，沉淀自第 1–2 轮需求与架构确认，面向长期自用与持续迭代维护。</p>
+  <h2 id="jSPdIyzS">1. 背景与目标（Why）</h2>
+  <p id="S_g-k7RL">用户日常高度依赖命令行工作流，不喜欢 Chrome 默认新标签页的视觉与交互方式，希望用一款自己会长期使用、持续维护扩展的 Chrome 新标签页插件替代它。插件将新标签页变成一个极简、响应迅速的浏览器原生虚拟 Shell，首期聚焦最核心的标签页查看、切换与打开网页能力，同时为后续持续增加浏览器指令打好清晰的架构基础。</p>
+  <h3 id="b7GCSceV">目标（v1 Goals）</h3>
+  <ul id="JhBu6HtD">
+    <li>接管 Chrome 新标签页（Manifest V3 <code>chrome_url_overrides.newtab</code>），启动后即呈现铺满视口、干净待命的 <code>@xterm/xterm</code> 终端界面。</li>
+    <li>实现本期核心三指令：<code>ls</code>（列出所有标签页及其原始 <code>tab.id</code>）、<code>cd</code>（按精确 <code>tab.id</code> 切换标签页）、<code>open</code>（智能解析网址或搜索词并在新标签页打开）。</li>
+    <li>提供日常可用的基础 Shell 手感：完整行编辑、跨新标签页持久化命令历史（上下键翻阅）、<code>Tab</code> 补全指令与 <code>cd</code> 标签页 ID、<code>Ctrl+L</code> 清屏、内置 <code>clear</code> 与 <code>help</code>。</li>
+    <li>以声明式 <code>CommandRegistry</code> + <code>BrowserAdapter</code> 隔离浏览器 API，所有核心逻辑（解析、行编辑、补全、指令执行）可通过 Vitest 在无浏览器环境下完整单测，新增指令只需新增单个模块并注册。</li>
+  </ul>
+  <h3 id="EEIq9ZuE">非目标（Non-Goals）</h3>
+  <ul id="HgtMDZCf">
+    <li>不做全局快捷键、Omnibox、Popup 或 Side Panel 入口（v1 仅新标签页）。</li>
+    <li>不接入本机操作系统 Shell、Native Messaging 或远程 PTY。</li>
+    <li>不做严格文件系统目录隐喻（无 <code>pwd</code>、<code>cd ..</code> 或窗口/标签组虚拟目录树）。</li>
+    <li><code>cd</code> 不做标题或 URL 模糊匹配，仅按精确 <code>tab.id</code> 切换（通过 <code>Tab</code> 补全提升输入效率）。</li>
+    <li>执行 <code>cd</code> 或 <code>open</code> 后不自动关闭当前新标签页终端。</li>
+    <li>不做 React 等 UI 框架、GUI 设置面板、主题切换 UI、管道/重定向或标签页关闭/移动等扩展指令（留待后续版本）。</li>
+  </ul>
+  <h3 id="NA0eJtbp">反目标（Anti-Goals）</h3>
+  <ul id="l5Kj6iac">
+    <li><b>不引入易漂移的临时短序号</b>：始终以 Chrome 原始 <code>tab.id</code> 作为唯一标识，避免其他标签页增删导致误切。</li>
+    <li><b>不让命令逻辑直接耦合全局 <code>chrome.*</code></b>：禁止在指令实现里散落 <code>chrome.tabs</code> 直接调用，确保长期演进时核心逻辑始终可测、可替换。</li>
+    <li><b>不在新标签页堆砌非终端元素</b>：不加时钟、天气、快捷卡片、搜索框或冗长欢迎横幅，保持纯粹终端体验与极速首屏渲染。</li>
+  </ul>
+  <h2 id="Etal_3NC">2. 已确定决策</h2>
+  <p id="XSkog9b_">下表汇总全部已收敛决策，并标明决策归属（<b>用户指定</b>、<b>已采纳推荐</b>、<b>我的默认</b>）。</p>
+  <table id="XUYDdpOz">
+    <tr>
+      <th>
+        <p>维度</p>
+      </th>
+      <th>
+        <p>决策</p>
+      </th>
+      <th>
+        <p>来源</p>
+      </th>
+    </tr>
+    <tr>
+      <td>
+        <p>定位与生命周期</p>
+      </td>
+      <td>
+        <p>替代 Chrome 默认新标签页，面向长期自用与持续维护迭代</p>
+      </td>
+      <td>
+        <p>用户指定</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>扩展形态与入口</p>
+      </td>
+      <td>
+        <p>Chrome Manifest V3，本期仅接管新标签页（<code>newtab-only</code>）</p>
+      </td>
+      <td>
+        <p>用户指定 / 已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>交互模型</p>
+      </td>
+      <td>
+        <p>浏览器原生虚拟 Shell，扁平操作标签页，纯前端运行（<code>browser-shell</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>终端引擎</p>
+      </td>
+      <td>
+        <p><code>@xterm/xterm</code> + <code>@xterm/addon-fit</code></p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>标签页标识</p>
+      </td>
+      <td>
+        <p>直接使用 Chrome 原始 <code>tab.id</code>，不重排短序号（<code>chrome-tab-id</code>）</p>
+      </td>
+      <td>
+        <p>用户指定</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>cd</code> 匹配规则</p>
+      </td>
+      <td>
+        <p>仅按精确 <code>tab.id</code> 切换，配合 <code>Tab</code> 补全，不做字符串模糊匹配（<code>index-only</code>）</p>
+      </td>
+      <td>
+        <p>用户指定</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>open</code> 行为</p>
+      </td>
+      <td>
+        <p>自动补全 <code>https://</code>，非网址词条走搜索引擎兜底，新开标签页后自动切焦点（<code>smart-focus</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>终端页保留策略</p>
+      </td>
+      <td>
+        <p>执行 <code>cd</code> 或 <code>open</code> 后始终保留当前终端标签页（<code>keep-tab</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>首屏与历史</p>
+      </td>
+      <td>
+        <p>干净提示符直接待命，命令历史跨新标签页持久化共享（<code>fresh-prompt</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>基础 Shell 手感</p>
+      </td>
+      <td>
+        <p>包含上下键持久化历史、<code>Tab</code> 补全、<code>Ctrl+L</code>、<code>clear</code>/<code>help</code>（<code>essential-ux</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>代码架构</p>
+      </td>
+      <td>
+        <p>声明式 <code>CommandRegistry</code> + <code>BrowserAdapter</code> 抽象层（<code>command-registry</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>工程技术栈</p>
+      </td>
+      <td>
+        <p>在 <code>splash</code> 仓库中采用 TypeScript + Vite（无 UI 框架）+ Vitest（<code>ts-vite</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>视觉方案</p>
+      </td>
+      <td>
+        <p>克制的深色全屏终端默认样式，主题常量独立模块便于后续扩展（<code>minimal-dark-default</code>）</p>
+      </td>
+      <td>
+        <p>已采纳推荐</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>ls</code> 默认范围</p>
+      </td>
+      <td>
+        <p>默认列出所有 Chrome 窗口的标签页（当前窗口排在前面），支持 <code>ls -c</code> 仅看当前窗口</p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p>默认搜索兜底实现</p>
+      </td>
+      <td>
+        <p>通过 MV3 官方 <code>chrome.search.query</code> 调用用户浏览器默认搜索引擎，而非硬编码 Google</p>
+      </td>
+      <td>
+        <p>我的默认</p>
+      </td>
+    </tr>
+  </table>
+  <h2 id="-H2Xtm2C">3. 平台约束与权限</h2>
+  <ul id="mszneB9_">
+    <li><b>Manifest V3 权限最小化</b>：仅声明 <code>tabs</code>（查询标签页标题/URL/ID、切换标签页与聚焦窗口、新建标签页）、<code>storage</code>（<code>chrome.storage.local</code> 持久化命令历史）、<code>search</code>（调用用户默认搜索引擎执行 <code>open</code> 非网址搜索兜底）。不申请 <code>&lt;all_urls&gt;</code> 或主机权限。</li>
+    <li><b>零 WASM / 零远端脚本</b>：<code>@xterm/xterm</code> 为纯 JS/TS 实现，遵守 MV3 默认 CSP，无需配置 <code>wasm-unsafe-eval</code>。</li>
+    <li><b>Chrome 新标签页焦点限制</b>：Chrome 在按下 <code>Cmd+T</code> / <code>Ctrl+T</code> 打开自定义新标签页时，出于安全策略默认把焦点留在地址栏。插件在页面加载完成、窗口重新获得焦点及点击画布时调用 <code>terminal.focus()</code>；不使用破坏历史记录或造成闪烁的页面重定向 hack。</li>
+    <li><b>跨窗口切换焦点</b>：当 <code>cd &lt;tabId&gt;</code> 目标标签页位于其他 Chrome 窗口时，除调用 <code>chrome.tabs.update(tabId, { active: true })</code> 外，必须同步调用 <code>chrome.windows.update(tab.windowId, { focused: true })</code> 将目标窗口置前（该调用包含在 <code>tabs</code> 权限范围内，无需额外权限）。</li>
+  </ul>
+  <h2 id="dReuwuUT">4. 指令与交互详细规格</h2>
+  <h3 id="PaETjfHT">4.1 词法解析（我的默认）</h3>
+  <p id="6Dnb8hjx">输入行按空白符切分为 token，支持成对单引号与双引号包裹含空格参数（未闭合引号返回语法错误提示）。空行或纯空白行直接换行输出新提示符，不写入历史记录。未注册命令输出错误：<code>splash: command not found: &lt;name&gt;</code>。</p>
+  <h3 id="l6W-4w_o">4.2 <code>ls</code>：列出当前所有标签页</h3>
+  <ul id="_l6e9oP_">
+    <li><b>用法</b>：<code>ls [-c | --current]</code></li>
+    <li><b>范围（我的默认）</b>：默认列出全部 Chrome 窗口中的所有标签页，当前窗口的标签页排在前面、按 <code>tab.index</code> 升序排列；存在多个窗口时，其他窗口的标签页按 <code>windowId</code> 分组依次排列并展示简短窗口标识（如 <code>W2</code>）。传入 <code>-c</code> / <code>--current</code> 时仅列出当前窗口标签页。</li>
+    <li>
+      <b>输出列格式（我的默认）</b>：按当前终端列宽（<code>cols</code>）自适应排版，每行包含四列：
+      <ul>
+        <li>当前激活标记：当前标签页显示高亮 <code>*</code>，其余为空格。</li>
+        <li><code>tab.id</code>：Chrome 原始数字 ID，固定宽度对齐并以主题强调色显示（极少数 <code>tab.id === undefined</code> 的特殊标签安全跳过）。</li>
+        <li><code>title</code>：标签页标题（空标题回退为 <code>(untitled)</code>），按东亚宽字符显示宽度（CJK 占 2 列）精确截断并补 <code>…</code>。</li>
+        <li><code>url</code>：次要弱化色显示，按剩余列宽截断；当视口极窄时优先保障 <code>tab.id</code> 与 <code>title</code> 可读。</li>
+      </ul>
+    </li>
+    <li><b>未知参数</b>：若传入不支持的 flag（如 <code>ls -z</code>），返回明确用法错误 <code>ls: unknown option: -z</code>，不静默忽略。</li>
+  </ul>
+  <h3 id="586rreuG">4.3 <code>cd</code>：切换到对应标签页</h3>
+  <ul id="9_dvNCAh">
+    <li><b>用法</b>：<code>cd &lt;tabId&gt;</code></li>
+    <li><b>精确匹配</b>：严格按 Chrome 原始 <code>tab.id</code>（正整数）匹配，不做标题/URL 模糊搜索。</li>
+    <li>
+      <b>参数与错误分支</b>：
+      <ul>
+        <li>无参数（<code>cd</code>）：输出 <code>usage: cd &lt;tabId&gt;  (hint: press Tab to complete)</code>。</li>
+        <li>参数多于 1 个或非纯正整数（如 <code>cd github</code>、<code>cd -1</code>）：输出 <code>cd: invalid tab id: &lt;arg&gt;</code>。</li>
+        <li>ID 对应的标签页不存在或已关闭：输出 <code>cd: tab not found: &lt;tabId&gt;</code>。</li>
+        <li>目标即为当前标签页：静默成功并返回提示符。</li>
+      </ul>
+    </li>
+    <li><b>切换与生命周期</b>：激活目标标签页；若跨窗口则同步聚焦目标窗口。始终保留当前新标签页终端。</li>
+    <li>
+      <b><code>Tab</code> 补全体验</b>：在输入 <code>cd </code> 或 <code>cd &lt;前缀&gt;</code> 后按 <code>Tab</code>：
+      <ul>
+        <li>查询当前所有标签页，按 <code>String(tab.id).startsWith(prefix)</code> 过滤候选。</li>
+        <li>若仅 1 个候选命中：直接补全完整 <code>tab.id</code> 到输入行。</li>
+        <li>若多个候选命中：先补全最长公共前缀（如有），并在提示符下方打印紧凑候选表（每行 <code>&lt;tabId&gt;  &lt;title&gt;</code>），随后重绘当前提示符与输入行，让用户不必肉眼记长数字 ID。</li>
+        <li>若 0 个候选命中：无操作（不破坏当前输入）。</li>
+      </ul>
+    </li>
+  </ul>
+  <h3 id="o7VlLqrd">4.4 <code>open</code>：在新标签页打开网址</h3>
+  <ul id="zuBnuIDv">
+    <li><b>用法</b>：<code>open &lt;url | search query...&gt;</code></li>
+    <li><b>无参数</b>：输出 <code>usage: open &lt;url | search query&gt;</code>。</li>
+    <li>
+      <b>输入解析规则（我的默认细化）</b>：
+      <ol>
+        <li><b>危险协议拦截</b>：若输入以 <code>javascript:</code> 或 <code>data:</code> 开头，拒绝执行并输出错误 <code>open: unsupported scheme</code>。</li>
+        <li><b>显式允许协议</b>：单个参数且以 <code>http://</code>、<code>https://</code>、<code>chrome://</code>、<code>chrome-extension://</code>、<code>file://</code>、<code>about:</code> 开头时，直接调用 <code>chrome.tabs.create({ url, active: true })</code>。</li>
+        <li>
+          <b>无协议本机/域名自动补全</b>：单个参数且不含空白符时：
+          <ul>
+            <li>匹配 <code>localhost</code>（含端口或路径，如 <code>localhost:3000/api</code>）或 IPv4 地址（如 <code>127.0.0.1:8080</code>）：自动补全 <code>http://</code>。</li>
+            <li>匹配合法域名形态（包含 <code>.</code> 且顶级域为 2 位以上字母，允许端口、路径、query、hash，如 <code>github.com/org/repo</code>、<code>docs.rs</code>）：自动补全 <code>https://</code>。</li>
+            <li>通过 <code>chrome.tabs.create({ url, active: true })</code> 在新标签页打开并切换焦点。</li>
+          </ul>
+        </li>
+        <li><b>搜索引擎兜底</b>：多词输入（所有参数按空格拼回原始查询串）或不符合上述网址形态的单词（如 <code>open weather</code>），调用 <code>chrome.search.query({ text, disposition: &apos;NEW_TAB&apos; })</code> 使用用户默认搜索引擎在新标签页打开并切换焦点。</li>
+      </ol>
+    </li>
+    <li><b>生命周期</b>：新开标签页并切换焦点过去，始终保留当前终端标签页。</li>
+  </ul>
+  <h3 id="DbSLND9L">4.5 内置辅助指令与 Shell 手感</h3>
+  <ul id="nQCTDxgM">
+    <li><b><code>clear</code></b>：清空终端视口与滚动缓冲区并重绘提示符（与 <code>Ctrl+L</code> 一致，但 <code>Ctrl+L</code> 保留当前正在输入的行内容）。</li>
+    <li><b><code>help [command]</code></b>：从 <code>CommandRegistry</code> 动态生成指令列表与一句话说明；带指令名时输出该指令的详细 <code>usage</code>（后续新注册的指令自动出现在 <code>help</code> 中）。</li>
+    <li>
+      <b>行编辑快捷键（我的默认）</b>：
+      <ul>
+        <li>光标移动：<code>Left</code> / <code>Right</code>、<code>Home</code> / <code>End</code>、<code>Ctrl+A</code>（行首）、<code>Ctrl+E</code>（行尾）。</li>
+        <li>删除编辑：<code>Backspace</code>、<code>Delete</code>、<code>Ctrl+U</code>（清至行首）、<code>Ctrl+K</code>（清至行尾）、<code>Ctrl+W</code>（删前一个词）。</li>
+        <li>控制键：<code>Ctrl+C</code>（中止当前输入行，打印 <code>^C</code> 并换新提示符）、<code>Ctrl+L</code>（清屏并保留当前行）。</li>
+        <li>中文 IME 与粘贴：行重绘基于东亚宽字符实际占列数计算光标偏移，确保中文输入、退格、左右移动不发生光标错位；粘贴含换行文本时将换行折叠为空格插入当前行，避免误触发多条命令执行。</li>
+      </ul>
+    </li>
+    <li>
+      <b>命令历史</b>：
+      <ul>
+        <li>上下方向键翻阅历史，向上翻阅时暂存当前未提交草稿，翻回底部时恢复草稿。</li>
+        <li>持久化到 <code>chrome.storage.local</code>（key 为 <code>splash.history</code>，上限 500 条，连续重复命令自动去重）。</li>
+        <li>监听 <code>chrome.storage.onChanged</code> 同步历史变更，多开新标签页之间实时共享最新历史（我的默认）。</li>
+      </ul>
+    </li>
+    <li><b>指令名 <code>Tab</code> 补全</b>：输入第一个 token 时按 <code>Tab</code>，按前缀匹配 <code>CommandRegistry</code> 中全部已注册指令名；唯一命中自动补全并附带空格，多命中列出候选指令。</li>
+  </ul>
+  <h2 id="yv1Rw5Qn">5. 架构与模块边界</h2>
+  <p id="GyzIovXe">整体拆分为四层：<b>终端视图层（xterm.js）</b>、<b>Shell 引擎层（纯 TS）</b>、<b>声明式指令层（Command Registry）</b>、<b>浏览器适配层（BrowserAdapter）</b>。只有最外层 <code>src/adapter/chromeAdapter.ts</code> 与 <code>src/main.ts</code> 触碰浏览器 DOM / <code>chrome.*</code> API，中间全部业务逻辑零浏览器依赖。</p>
+  <mermaid id="NQ43gnPD">flowchart LR
+  User[&quot;键盘 / IME 输入&quot;] --&gt; XTerm[&quot;@xterm/xterm + FitAddon&quot;]
+  XTerm &lt;--&gt; Controller[&quot;ShellController&quot;]
+  Controller --&gt; Editor[&quot;LineEditor 状态机&quot;]
+  Controller --&gt; Parser[&quot;Tokenizer / Parser&quot;]
+  Controller --&gt; Registry[&quot;CommandRegistry&quot;]
+  Registry --&gt; Cmds[&quot;Commands: ls / cd / open / clear / help&quot;]
+  Cmds --&gt; Adapter[&quot;BrowserAdapter 接口&quot;]
+  Controller --&gt; Adapter
+  Adapter --&gt; Chrome[&quot;ChromeBrowserAdapter (chrome.tabs / windows / search / storage)&quot;]
+  Adapter -.-&gt; Fake[&quot;FakeBrowserAdapter (Vitest 单测)&quot;]</mermaid>
+  <h3 id="5mN8wfQR">核心接口约定</h3>
+  <codeblock id="nZjabtyY" lang="ts">export interface TabInfo {
+  id: number;
+  windowId: number;
+  index: number;
+  active: boolean;
+  title: string;
+  url: string;
+}
+
+export interface BrowserAdapter {
+  getCurrentWindowId(): Promise&lt;number&gt;;
+  getCurrentTabId(): Promise&lt;number | undefined&gt;;
+  listTabs(scope: &apos;all&apos; | &apos;current&apos;): Promise&lt;TabInfo[]&gt;;
+  activateTab(tabId: number): Promise&lt;&apos;activated&apos; | &apos;not_found&apos;&gt;;
+  openUrl(url: string): Promise&lt;void&gt;;
+  search(query: string): Promise&lt;void&gt;;
+  loadHistory(): Promise&lt;string[]&gt;;
+  saveHistory(entries: string[]): Promise&lt;void&gt;;
+  onHistoryChanged(listener: (entries: string[]) =&gt; void): () =&gt; void;
+}
+
+export interface CompletionItem {
+  value: string;
+  label?: string;
+}
+
+export interface CommandContext {
+  adapter: BrowserAdapter;
+  registry: CommandRegistry;
+  cols: number;
+  write(text: string): void;
+  writeln(text?: string): void;
+  clear(): void;
+}
+
+export interface CommandDefinition {
+  name: string;
+  summary: string;
+  usage: string;
+  execute(ctx: CommandContext, args: string[]): Promise&lt;void&gt; | void;
+  complete?(ctx: CommandContext, args: string[], currentToken: string): Promise&lt;CompletionItem[]&gt; | CompletionItem[];
+}</codeblock>
+  <h3 id="6qA_7Qvh">推荐目录结构（我的默认）</h3>
+  <table id="g_wLxU0f">
+    <tr>
+      <th>
+        <p>路径</p>
+      </th>
+      <th>
+        <p>职责</p>
+      </th>
+    </tr>
+    <tr>
+      <td>
+        <p><code>public/manifest.json</code></p>
+      </td>
+      <td>
+        <p>Manifest V3 配置：<code>chrome_url_overrides.newtab</code>、图标、权限（<code>tabs</code> / <code>storage</code> / <code>search</code>）</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>newtab.html</code></p>
+      </td>
+      <td>
+        <p>极简入口页，页面标题 <code>splash</code>，全屏挂载节点 <code>#terminal</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/main.ts</code></p>
+      </td>
+      <td>
+        <p>组装 <code>Terminal</code>、<code>FitAddon</code>、<code>ResizeObserver</code>、<code>ChromeBrowserAdapter</code>、<code>CommandRegistry</code> 与 <code>ShellController</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/theme/defaultTheme.ts</code></p>
+      </td>
+      <td>
+        <p>集中存放终端配色、字体栈、字号与提示符样式（便于后续扩展主题配置）</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/adapter/types.ts</code> &amp; <code>chromeAdapter.ts</code></p>
+      </td>
+      <td>
+        <p><code>BrowserAdapter</code> 契约与 Chrome API 薄封装</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/shell/</code></p>
+      </td>
+      <td>
+        <p><code>parser.ts</code>、<code>lineEditor.ts</code>、<code>registry.ts</code>、<code>controller.ts</code>、<code>ansi.ts</code>、<code>width.ts</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>src/commands/</code></p>
+      </td>
+      <td>
+        <p>每条指令一个独立文件：<code>ls.ts</code>、<code>cd.ts</code>、<code>open.ts</code>、<code>clear.ts</code>、<code>help.ts</code> 与统一注册入口 <code>index.ts</code></p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>tests/</code></p>
+      </td>
+      <td>
+        <p>Vitest 测试套件：覆盖词法解析、行编辑（含 CJK 宽字符）、历史持久化、补全逻辑以及全部指令的正常/异常路径</p>
+      </td>
+    </tr>
+  </table>
+  <h2 id="fwy_nwdX">6. 视觉与界面方向</h2>
+  <ul id="6ZczejLD">
+    <li><b>产品气质</b>：克制、冷静、高信噪比的日常主力开发者终端，打开新标签页即刻进入工作态，无任何装饰性组件或营销文案。</li>
+    <li><b>布局与视口</b>：<code>100vw × 100vh</code> 铺满整个浏览器标签页（无滚动条、外层 <code>overflow: hidden</code>，内边距 <code>12px 16px</code>），通过 <code>@xterm/addon-fit</code> + <code>ResizeObserver</code> 实时适配窗口缩放。</li>
+    <li><b>提示符与首屏</b>：打开即呈现空白屏幕与简洁提示符（默认 <code>$ </code>，主题青色），不打印欢迎横幅。</li>
+    <li>
+      <b>字体与配色（我的默认，独立存于 <code>defaultTheme.ts</code>）</b>：
+      <ul>
+        <li>字体栈：<code>&quot;JetBrains Mono&quot;, &quot;SF Mono&quot;, &quot;Cascadia Code&quot;, Menlo, Consolas, monospace</code>，14px，行高 1.4。</li>
+        <li>配色：深岩灰背景 <code>#0f1117</code>、柔和亮白正文 <code>#e6edf3</code>、次要信息灰 <code>#6e7681</code>（URL 与窗口标记）、强调青蓝 <code>#58a6ff</code>（提示符与 <code>tab.id</code>）、翡翠绿 <code>#3fb950</code>（当前标签 <code>*</code> 标记）、错误珊瑚红 <code>#f85149</code>。</li>
+      </ul>
+    </li>
+  </ul>
+  <h2 id="HFkdph65">7. 留给实现阶段决定的细节</h2>
+  <ul id="CUj6OAkB">
+    <li>Vite 打包 MV3 扩展的具体构建插件/配置细节（保证 <code>npm run build</code> 产出可直接通过 Chrome「加载已解压的扩展程序」加载的 <code>dist/</code> 目录）。</li>
+    <li>东亚宽字符宽度计算采用轻量依赖还是内建 East Asian Width 判定表。</li>
+    <li>极窄窗口（如 <code>cols &lt; 60</code>）下 <code>ls</code> 隐藏 URL 列或进一步缩短标题的具体阈值。</li>
+    <li>Chrome 扩展图标的具体极简 SVG/PNG 绘制（保证 16/48/128 尺寸清晰）。</li>
+    <li><code>package.json</code> 中脚本命名与 Vitest 配置文件细节（至少提供 <code>build</code>、<code>test</code>、<code>typecheck</code>）。</li>
+  </ul>
+  <h2 id="eBANzSlw">8. 对话使用的 Artifact 记录</h2>
+  <ul id="U3LFTHmQ">
+    <li><b>设计文档</b>：<code>document/newtab-shell</code>（路径 <code>.ryugi/artifacts/document/newtab-shell/doc.xml</code>）——全部第 1–2 轮需求确认与最终设计均在本文档内完成收敛，未创建独立画板或白板。</li>
+  </ul>
+  <p id="lGpNaMJZ">请确认是否批准这份设计文档进入实现阶段：<ask id="approve"><option value="approve">批准，按此设计开始实现</option><option value="revise">需要修改（请在文档中留言说明改动点）</option></ask></p>
+</doc>
+

@@ -1,0 +1,327 @@
+{
+  "version": 1,
+  "threads": [
+    {
+      "id": "EtAYrlOPXW",
+      "anchor": {
+        "blockId": "EVidqR9n",
+        "quote": "",
+        "ask": "usage-moment",
+        "choice": null,
+        "answer": "我更习惯命令行操作，现在的chrome新页面我不喜欢；我会持续维护这个插件，不考虑卸载。\n\n为啥要问这个"
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T13:53:14.911Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "QE6SeiF2Is",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "我更习惯命令行操作，现在的chrome新页面我不喜欢；我会持续维护这个插件，不考虑卸载。\n\n为啥要问这个",
+          "at": "2026-11-26T13:53:14.911Z"
+        }
+      ]
+    },
+    {
+      "id": "LBqIY7h5Si",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "shell-model",
+          "usage-moment",
+          "terminal-engine",
+          "open-behavior",
+          "shell-ergonomics",
+          "entry-mode",
+          "tech-stack"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T13:53:19.627Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "rFsLG1ZCpl",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-26T13:53:19.627Z"
+        }
+      ]
+    },
+    {
+      "id": "vNIj7bI0xN",
+      "anchor": {
+        "blockId": "HSzpN-mv",
+        "quote": "",
+        "ask": "ls-scope-format",
+        "choice": "chrome-tab-id",
+        "answer": null
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:01:18.806Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "Y1YRW4alqN",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "chrome-tab-id",
+          "at": "2026-11-26T14:01:18.806Z"
+        }
+      ]
+    },
+    {
+      "id": "aKjxp6fo07",
+      "anchor": {
+        "blockId": "hh4VsHZn",
+        "quote": "",
+        "ask": "cd-matching",
+        "choice": "index-only",
+        "answer": null
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:01:26.458Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "oSZZFnRk98",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "index-only",
+          "at": "2026-11-26T14:01:26.458Z"
+        }
+      ]
+    },
+    {
+      "id": "vQIm_Ot_9n",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "ls-scope-format",
+          "cd-matching",
+          "tab-lifecycle",
+          "newtab-startup",
+          "command-architecture",
+          "visual-direction"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:01:39.238Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "v19uWIY6qt",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-26T14:01:39.238Z"
+        }
+      ]
+    },
+    {
+      "id": "tXaik0h_Oc",
+      "anchor": {
+        "blockId": "HSzpN-mv",
+        "quote": "",
+        "ask": "ls-scope-format",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:14.690Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "XXzxiAMpTX",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：ls 直接展示 Chrome 原始 tab.id，不重排短序号。",
+          "at": "2026-11-26T14:06:14.690Z"
+        }
+      ]
+    },
+    {
+      "id": "0rzZS5HTXz",
+      "anchor": {
+        "blockId": "hh4VsHZn",
+        "quote": "",
+        "ask": "cd-matching",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:15.102Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "gXLsoxQqR8",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：cd 仅按精确 tab.id 切换，配合 Tab 补全展示 ID 与标题，不做模糊匹配。",
+          "at": "2026-11-26T14:06:15.102Z"
+        }
+      ]
+    },
+    {
+      "id": "zJyJZ8kSYA",
+      "anchor": {
+        "blockId": "0shDCOyg",
+        "quote": "",
+        "ask": "tab-lifecycle",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:15.317Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "ELTIwPldfH",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：执行 cd 或 open 后始终保留当前新标签页终端。",
+          "at": "2026-11-26T14:06:15.317Z"
+        }
+      ]
+    },
+    {
+      "id": "Mo-uuxl8Z8",
+      "anchor": {
+        "blockId": "fNXkrAj_",
+        "quote": "",
+        "ask": "newtab-startup",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:15.550Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "Gd0Fe86itC",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：新标签页启动为干净提示符待命，命令历史跨标签页持久化共享。",
+          "at": "2026-11-26T14:06:15.550Z"
+        }
+      ]
+    },
+    {
+      "id": "ERB1lGFFBD",
+      "anchor": {
+        "blockId": "dCyTWxM8",
+        "quote": "",
+        "ask": "command-architecture",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:15.757Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "BijUU3Gz4W",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：采用声明式 CommandRegistry + BrowserAdapter 分层架构。",
+          "at": "2026-11-26T14:06:15.757Z"
+        }
+      ]
+    },
+    {
+      "id": "F_aWJcGc-P",
+      "anchor": {
+        "blockId": "EFuVZumV",
+        "quote": "",
+        "ask": "visual-direction",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:06:15.957Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "43VKvTLXUu",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "已写入设计文档：采用克制的深色全屏终端默认样式，主题常量独立于 defaultTheme.ts。",
+          "at": "2026-11-26T14:06:15.957Z"
+        }
+      ]
+    },
+    {
+      "id": "Y9eAGnPQPo",
+      "anchor": {
+        "blockId": "lGpNaMJZ",
+        "quote": "",
+        "ask": "approve",
+        "choice": "approve",
+        "answer": null
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:13:11.729Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "NPOLuNNWzo",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "approve",
+          "at": "2026-11-26T14:13:11.729Z"
+        }
+      ]
+    },
+    {
+      "id": "JkBougGsDV",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "approve"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:13:18.757Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "nj5cVQDmkd",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-26T14:13:18.757Z"
+        }
+      ]
+    },
+    {
+      "id": "OChjoo3vnr",
+      "anchor": {
+        "blockId": "lGpNaMJZ",
+        "quote": "",
+        "ask": "approve",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-26T14:14:30.394Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "oArAgEZtjq",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "设计已批准，正在写入规格指针、提交设计并按规格进入实现阶段。",
+          "at": "2026-11-26T14:14:30.394Z"
+        }
+      ]
+    }
+  ]
+}
