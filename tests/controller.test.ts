@@ -68,9 +68,16 @@ describe('ShellController end-to-end', () => {
     await controller.handleData('ls');
     await controller.handleData('\r');
     const lsOut = term.plainOutput();
-    expect(lsOut).toContain('1001');
+    expect(lsOut).not.toContain('1001');
     expect(lsOut).toContain('1002');
     expect(lsOut).toContain('GitHub');
+
+    term.resetCapture();
+    await controller.handleData('ls -a');
+    await controller.handleData('\r');
+    const lsAllOut = term.plainOutput();
+    expect(lsAllOut).toContain('1001');
+    expect(lsAllOut).toContain('1002');
 
     term.resetCapture();
     await controller.handleData('cd 1002');

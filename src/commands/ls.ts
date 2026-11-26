@@ -8,6 +8,25 @@ import {
 } from '../shell/width';
 
 const NARROW_VIEWPORT_COLS = 60;
+const CHROME_NEWTAB_RE = /^chrome:\/\/newtab(?:[/?#]|$)/i;
+const EXTENSION_NEWTAB_RE = /^chrome-extension:\/\/[^/]+\/newtab\.html(?:[/?#]|$)/i;
+
+export const TAB_LINK_PREFIX = 'splash-tab://';
+
+export function formatTabLinkUri(tabId: number): string {
+  return `${TAB_LINK_PREFIX}${tabId}`;
+}
+
+export function isNewTabExtensionPage(
+  tab: TabInfo,
+  currentTabId?: number,
+): boolean {
+  if (currentTabId !== undefined && tab.id === currentTabId) {
+    return true;
+  }
+  const url = tab.url.trim();
+  return CHROME_NEWTAB_RE.test(url) || EXTENSION_NEWTAB_RE.test(url);
+}
 
 function sortTabsForDisplay(tabs: TabInfo[], currentWindowId: number): TabInfo[] {
   return [...tabs].sort((a, b) => {
@@ -21,15 +40,15 @@ function sortTabsForDisplay(tabs: TabInfo[], currentWindowId: number): TabInfo[]
 
 export const lsCommand: CommandDefinition = {
   name: 'ls',
-  summary: 'List open Chrome tabs with their tab IDs',
-  usage: 'ls [-c | --current]',
+  summary: 'List open Chrome tabs (use -a to include new tab pages)',
+  usage: 'ls [-a | --all]',
 
   async execute(ctx, args) {
-    let scope: 'all' | 'current' = 'all';
+    let includeNewTab = false;
 
     for (const arg of args) {
-      if (arg === '-c' || arg === '--current') {
-        scope = 'current';
+      if (arg === '-a' || arg === '--all') {
+        includeNewTab = true;
       } else {
         ctx.writeln(ansi.error(`ls: unknown option: ${arg}`));
         return;
@@ -39,10 +58,14 @@ export const lsCommand: CommandDefinition = {
     const [currentWindowId, currentTabId, rawTabs] = await Promise.all([
       ctx.adapter.getCurrentWindowId(),
       ctx.adapter.getCurrentTabId(),
-      ctx.adapter.listTabs(scope),
+      ctx.adapter.listTabs('all'),
     ]);
 
-    const tabs = sortTabsForDisplay(rawTabs, currentWindowId);
+    const visibleTabs = includeNewTab
+      ? rawTabs
+      : rawTabs.filter((tab) => !isNewTabExtensionPage(tab, currentTabId));
+
+    const tabs = sortTabsForDisplay(visibleTabs, currentWindowId);
     if (tabs.length === 0) {
       ctx.writeln(ansi.muted('(no tabs)'));
       return;
@@ -87,13 +110,18 @@ export const lsCommand: CommandDefinition = {
 
       const rawTitle = sanitizeTerminalText(tab.title).trim() || '(untitled)';
       const titleText = truncateToWidth(rawTitle, titleCols);
+      const tabUri = formatTabLinkUri(tab.id);
 
       if (showUrl) {
         const paddedTitle = padRightToWidth(titleText, titleCols);
         const urlText = truncateToWidth(sanitizeTerminalText(tab.url), urlCols);
-        ctx.writeln(`${marker} ${idText}${winPart}  ${paddedTitle}  ${ansi.muted(urlText)}`);
+        const linkedUrl = urlText
+          ? ansi.link(tabUri, ansi.muted(urlText))
+          : '';
+        ctx.writeln(`${marker} ${idText}${winPart}  ${paddedTitle}  ${linkedUrl}`);
       } else {
-        ctx.writeln(`${marker} ${idText}${winPart}  ${titleText}`);
+        const linkedTitle = ansi.link(tabUri, titleText);
+        ctx.writeln(`${marker} ${idText}${winPart}  ${linkedTitle}`);
       }
     }
   },

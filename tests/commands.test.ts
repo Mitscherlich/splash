@@ -35,52 +35,85 @@ function createContext(adapter: FakeBrowserAdapter, cols = 100) {
 }
 
 describe('ls command', () => {
-  it('lists all windows with current window first, raw tab.id, active marker, and W2 window tag', async () => {
+  it('excludes newtab extension pages by default and shows all tabs with -a / --all', async () => {
     const adapter = new FakeBrowserAdapter({
       currentWindowId: 10,
       currentTabId: 102,
       tabs: [
         { id: 201, windowId: 20, index: 0, active: true, title: 'Docs', url: 'https://docs.rs' },
-        { id: 102, windowId: 10, index: 1, active: true, title: 'splash', url: 'chrome://newtab' },
+        { id: 102, windowId: 10, index: 1, active: true, title: 'splash', url: 'chrome://newtab/' },
+        {
+          id: 103,
+          windowId: 10,
+          index: 2,
+          active: false,
+          title: 'splash',
+          url: 'chrome-extension://abcdefghijklmnop/newtab.html',
+        },
         { id: 101, windowId: 10, index: 0, active: false, title: 'GitHub', url: 'https://github.com' },
       ],
     });
-    const { ctx, registry, output } = createContext(adapter, 100);
 
-    await registry.get('ls')!.execute(ctx, []);
-    const rows = output().trim().split('\n');
+    // Default ls hides newtab extension pages (102, 103)
+    const defaultRun = createContext(adapter, 100);
+    await defaultRun.registry.get('ls')!.execute(defaultRun.ctx, []);
+    const defaultRows = defaultRun.output().trim().split('\n');
+    expect(defaultRows).toHaveLength(2);
+    expect(defaultRows[0]).toContain('101');
+    expect(defaultRows[0]).toContain('GitHub');
+    expect(defaultRows[1]).toContain('W2');
+    expect(defaultRows[1]).toContain('201');
+    expect(defaultRows[1]).toContain('Docs');
 
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toContain('101');
-    expect(rows[0]).toContain('GitHub');
-    expect(rows[0]).not.toMatch(/^\*/);
-
-    expect(rows[1]).toMatch(/^\*/);
-    expect(rows[1]).toContain('102');
-    expect(rows[1]).toContain('splash');
-
-    expect(rows[2]).toContain('W2');
-    expect(rows[2]).toContain('201');
-    expect(rows[2]).toContain('Docs');
+    // ls -a and ls --all include newtab extension pages and mark current tab with *
+    for (const flag of ['-a', '--all']) {
+      const allRun = createContext(adapter, 100);
+      await allRun.registry.get('ls')!.execute(allRun.ctx, [flag]);
+      const allRows = allRun.output().trim().split('\n');
+      expect(allRows).toHaveLength(4);
+      expect(allRows[1]).toMatch(/^\*/);
+      expect(allRows[1]).toContain('102');
+      expect(allRows[2]).toContain('103');
+    }
   });
 
-  it('scopes to current window when -c or --current is passed', async () => {
+  it('rejects removed -c / --current options as unknown options', async () => {
     const adapter = new FakeBrowserAdapter({
       currentWindowId: 10,
       currentTabId: 101,
       tabs: [
         { id: 101, windowId: 10, index: 0, active: true, title: 'Local', url: 'http://localhost:3000' },
-        { id: 201, windowId: 20, index: 0, active: true, title: 'Other', url: 'https://example.com' },
       ],
     });
 
     for (const flag of ['-c', '--current']) {
       const { ctx, registry, output } = createContext(adapter, 100);
       await registry.get('ls')!.execute(ctx, [flag]);
-      const text = output();
-      expect(text).toContain('101');
-      expect(text).not.toContain('201');
+      expect(output()).toContain(`ls: unknown option: ${flag}`);
     }
+  });
+
+  it('wraps ls links in OSC 8 splash-tab://<tabId> hyperlinks (and title on narrow viewports)', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 999,
+      tabs: [
+        { id: 999, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab/' },
+        { id: 1002, windowId: 1, index: 1, active: false, title: 'GitHub', url: 'https://github.com' },
+      ],
+    });
+
+    const wide = createContext(adapter, 100);
+    await wide.registry.get('ls')!.execute(wide.ctx, []);
+    expect(wide.rawOutput()).toContain('\x1b]8;;splash-tab://1002\x07');
+    expect(wide.rawOutput()).toContain('\x1b]8;;\x07');
+    expect(wide.output()).toContain('https://github.com');
+    expect(wide.output()).not.toContain('splash-tab://');
+
+    // Narrow viewport omits URL column, so title itself carries the OSC 8 tab link
+    const narrow = createContext(adapter, 45);
+    await narrow.registry.get('ls')!.execute(narrow.ctx, []);
+    expect(narrow.rawOutput()).toContain('\x1b]8;;splash-tab://1002\x07GitHub\x1b]8;;\x07');
   });
 
   it('handles untitled tabs, CJK title truncation on narrow cols, and unknown options', async () => {
@@ -88,11 +121,12 @@ describe('ls command', () => {
       currentWindowId: 1,
       currentTabId: 1001,
       tabs: [
-        { id: 1001, windowId: 1, index: 0, active: true, title: '', url: 'about:blank' },
+        { id: 1001, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab/' },
+        { id: 1002, windowId: 1, index: 1, active: false, title: '', url: 'about:blank' },
         {
-          id: 1002,
+          id: 1003,
           windowId: 1,
-          index: 1,
+          index: 2,
           active: false,
           title: '这是一个非常非常长的中文标签页标题用于测试截断',
           url: 'https://example.com/very/long/path/that/should/truncate',
@@ -114,13 +148,14 @@ describe('ls command', () => {
   it('sanitizes control characters from webpage titles and URLs in ls and cd completion', async () => {
     const adapter = new FakeBrowserAdapter({
       currentWindowId: 1,
-      currentTabId: 1001,
+      currentTabId: 999,
       tabs: [
+        { id: 999, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab/' },
         {
           id: 1001,
           windowId: 1,
-          index: 0,
-          active: true,
+          index: 1,
+          active: false,
           title: 'Safe\x1b[2JTitle\x07',
           url: 'https://evil.example/\x1b]52;c;xx\x07',
         },
@@ -131,9 +166,10 @@ describe('ls command', () => {
     await registry.get('ls')!.execute(ctx, []);
     expect(rawOutput()).not.toContain('\x1b[2J');
     expect(rawOutput()).not.toContain('\x1b]52');
-    expect(rawOutput()).not.toContain('\x07');
+    // Note: OSC 8 uses \x07 as terminator, so verify the injected BEL inside title/url did not survive
+    expect(ansi.strip(rawOutput())).not.toContain('\x07');
 
-    const completions = await registry.get('cd')!.complete!(ctx, [], '');
+    const completions = await registry.get('cd')!.complete!(ctx, [], '1001');
     expect(completions[0]?.label).toBe('Safe[2JTitle');
   });
 });
