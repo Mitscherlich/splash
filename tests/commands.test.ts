@@ -1,0 +1,301 @@
+import { describe, expect, it } from 'vitest';
+import { createDefaultRegistry } from '../src/commands';
+import { resolveOpenTarget } from '../src/commands/open';
+import { ansi } from '../src/shell/ansi';
+import type { CommandContext } from '../src/shell/registry';
+import { FakeBrowserAdapter } from './fakeAdapter';
+
+function createContext(adapter: FakeBrowserAdapter, cols = 100) {
+  const registry = createDefaultRegistry();
+  const lines: string[] = [];
+  let cleared = 0;
+
+  const ctx: CommandContext = {
+    adapter,
+    registry,
+    cols,
+    write(text: string) {
+      lines.push(text);
+    },
+    writeln(text = '') {
+      lines.push(`${text}\n`);
+    },
+    clear() {
+      cleared += 1;
+    },
+  };
+
+  return {
+    ctx,
+    registry,
+    output: () => ansi.strip(lines.join('')),
+    rawOutput: () => lines.join(''),
+    clearedCount: () => cleared,
+  };
+}
+
+describe('ls command', () => {
+  it('lists all windows with current window first, raw tab.id, active marker, and W2 window tag', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 10,
+      currentTabId: 102,
+      tabs: [
+        { id: 201, windowId: 20, index: 0, active: true, title: 'Docs', url: 'https://docs.rs' },
+        { id: 102, windowId: 10, index: 1, active: true, title: 'splash', url: 'chrome://newtab' },
+        { id: 101, windowId: 10, index: 0, active: false, title: 'GitHub', url: 'https://github.com' },
+      ],
+    });
+    const { ctx, registry, output } = createContext(adapter, 100);
+
+    await registry.get('ls')!.execute(ctx, []);
+    const rows = output().trim().split('\n');
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain('101');
+    expect(rows[0]).toContain('GitHub');
+    expect(rows[0]).not.toMatch(/^\*/);
+
+    expect(rows[1]).toMatch(/^\*/);
+    expect(rows[1]).toContain('102');
+    expect(rows[1]).toContain('splash');
+
+    expect(rows[2]).toContain('W2');
+    expect(rows[2]).toContain('201');
+    expect(rows[2]).toContain('Docs');
+  });
+
+  it('scopes to current window when -c or --current is passed', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 10,
+      currentTabId: 101,
+      tabs: [
+        { id: 101, windowId: 10, index: 0, active: true, title: 'Local', url: 'http://localhost:3000' },
+        { id: 201, windowId: 20, index: 0, active: true, title: 'Other', url: 'https://example.com' },
+      ],
+    });
+
+    for (const flag of ['-c', '--current']) {
+      const { ctx, registry, output } = createContext(adapter, 100);
+      await registry.get('ls')!.execute(ctx, [flag]);
+      const text = output();
+      expect(text).toContain('101');
+      expect(text).not.toContain('201');
+    }
+  });
+
+  it('handles untitled tabs, CJK title truncation on narrow cols, and unknown options', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        { id: 1001, windowId: 1, index: 0, active: true, title: '', url: 'about:blank' },
+        {
+          id: 1002,
+          windowId: 1,
+          index: 1,
+          active: false,
+          title: '这是一个非常非常长的中文标签页标题用于测试截断',
+          url: 'https://example.com/very/long/path/that/should/truncate',
+        },
+      ],
+    });
+
+    const narrow = createContext(adapter, 45);
+    await narrow.registry.get('ls')!.execute(narrow.ctx, []);
+    const out = narrow.output();
+    expect(out).toContain('(untitled)');
+    expect(out).toContain('…');
+
+    const bad = createContext(adapter, 100);
+    await bad.registry.get('ls')!.execute(bad.ctx, ['-z']);
+    expect(bad.output()).toContain('ls: unknown option: -z');
+  });
+});
+
+describe('cd command', () => {
+  it('activates exact tab.id and keeps current shell tab intact', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        { id: 1001, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab' },
+        { id: 1002, windowId: 2, index: 0, active: false, title: 'GitHub', url: 'https://github.com' },
+      ],
+    });
+    const { ctx, registry, output } = createContext(adapter);
+
+    await registry.get('cd')!.execute(ctx, ['1002']);
+    expect(adapter.activatedTabIds).toEqual([1002]);
+    expect(adapter.tabs.some((t) => t.id === 1001)).toBe(true);
+    expect(output()).toBe('');
+  });
+
+  it('returns silently when targeting the already current tab', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        { id: 1001, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab' },
+      ],
+    });
+    const { ctx, registry, output } = createContext(adapter);
+
+    await registry.get('cd')!.execute(ctx, ['1001']);
+    expect(output()).toBe('');
+    expect(adapter.activatedTabIds).toEqual([]);
+  });
+
+  it('validates missing, non-integer, negative, extra, and non-existent tab ids', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1001,
+      tabs: [
+        { id: 1001, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab' },
+      ],
+    });
+
+    const missing = createContext(adapter);
+    await missing.registry.get('cd')!.execute(missing.ctx, []);
+    expect(missing.output()).toContain('usage: cd <tabId>');
+
+    for (const invalid of [['github'], ['-1'], ['0'], ['12.5'], ['1001', '1002']]) {
+      const res = createContext(adapter);
+      await res.registry.get('cd')!.execute(res.ctx, invalid);
+      expect(res.output()).toContain('cd: invalid tab id');
+    }
+
+    const notFound = createContext(adapter);
+    await notFound.registry.get('cd')!.execute(notFound.ctx, ['999999']);
+    expect(notFound.output()).toContain('cd: tab not found: 999999');
+  });
+
+  it('completes tab IDs by prefix with tab title labels', async () => {
+    const adapter = new FakeBrowserAdapter({
+      currentWindowId: 1,
+      currentTabId: 1201,
+      tabs: [
+        { id: 1201, windowId: 1, index: 0, active: true, title: 'splash', url: 'chrome://newtab' },
+        { id: 1209, windowId: 1, index: 1, active: false, title: 'GitHub', url: 'https://github.com' },
+        { id: 5500, windowId: 1, index: 2, active: false, title: 'Docs', url: 'https://docs.rs' },
+      ],
+    });
+    const { ctx, registry } = createContext(adapter);
+
+    const items = await registry.get('cd')!.complete!(ctx, [], '12');
+    expect(items).toEqual([
+      { value: '1201', label: 'splash' },
+      { value: '1209', label: 'GitHub' },
+    ]);
+
+    // Second positional argument should not offer completions
+    const secondArg = await registry.get('cd')!.complete!(ctx, ['1201'], '');
+    expect(secondArg).toEqual([]);
+  });
+});
+
+describe('open command and resolveOpenTarget', () => {
+  it('blocks dangerous schemes case-insensitively', () => {
+    expect(resolveOpenTarget(['javascript:alert(1)'])).toEqual({
+      kind: 'error',
+      message: 'open: unsupported scheme',
+    });
+    expect(resolveOpenTarget(['JAVASCRIPT:void(0)'])).toEqual({
+      kind: 'error',
+      message: 'open: unsupported scheme',
+    });
+    expect(resolveOpenTarget(['data:text/html,<h1>x</h1>'])).toEqual({
+      kind: 'error',
+      message: 'open: unsupported scheme',
+    });
+  });
+
+  it('passes explicit allowed schemes directly to openUrl', () => {
+    for (const url of [
+      'https://github.com/org/repo',
+      'http://localhost:5173',
+      'chrome://extensions',
+      'chrome-extension://abcdef/newtab.html',
+      'file:///tmp/index.html',
+      'about:blank',
+    ]) {
+      expect(resolveOpenTarget([url])).toEqual({ kind: 'url', url });
+    }
+  });
+
+  it('prepends http:// for localhost and IPv4, and https:// for bare domains', () => {
+    expect(resolveOpenTarget(['localhost'])).toEqual({ kind: 'url', url: 'http://localhost' });
+    expect(resolveOpenTarget(['localhost:3000/api'])).toEqual({
+      kind: 'url',
+      url: 'http://localhost:3000/api',
+    });
+    expect(resolveOpenTarget(['127.0.0.1:8080/health'])).toEqual({
+      kind: 'url',
+      url: 'http://127.0.0.1:8080/health',
+    });
+    expect(resolveOpenTarget(['github.com'])).toEqual({
+      kind: 'url',
+      url: 'https://github.com',
+    });
+    expect(resolveOpenTarget(['docs.rs/tokio/latest?q=1#top'])).toEqual({
+      kind: 'url',
+      url: 'https://docs.rs/tokio/latest?q=1#top',
+    });
+  });
+
+  it('routes multi-word queries and non-domain words to default search', () => {
+    expect(resolveOpenTarget(['weather'])).toEqual({ kind: 'search', query: 'weather' });
+    expect(resolveOpenTarget(['v1.2'])).toEqual({ kind: 'search', query: 'v1.2' });
+    expect(resolveOpenTarget(['xterm', 'fit', 'addon'])).toEqual({
+      kind: 'search',
+      query: 'xterm fit addon',
+    });
+    expect(resolveOpenTarget(['hello world'])).toEqual({
+      kind: 'search',
+      query: 'hello world',
+    });
+  });
+
+  it('executes openUrl / search via adapter and prints usage when empty', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const empty = createContext(adapter);
+    await empty.registry.get('open')!.execute(empty.ctx, []);
+    expect(empty.output()).toContain('usage: open <url | search query>');
+
+    const urlRun = createContext(adapter);
+    await urlRun.registry.get('open')!.execute(urlRun.ctx, ['github.com']);
+    expect(adapter.openedUrls).toEqual(['https://github.com']);
+
+    const searchRun = createContext(adapter);
+    await searchRun.registry.get('open')!.execute(searchRun.ctx, ['chrome', 'mv3', 'search']);
+    expect(adapter.searches).toEqual(['chrome mv3 search']);
+  });
+});
+
+describe('clear and help commands', () => {
+  it('clear calls ctx.clear()', async () => {
+    const adapter = new FakeBrowserAdapter();
+    const { ctx, registry, clearedCount } = createContext(adapter);
+
+    await registry.get('clear')!.execute(ctx, []);
+    expect(clearedCount()).toBe(1);
+  });
+
+  it('help lists all registered commands and shows detailed usage for one command', async () => {
+    const adapter = new FakeBrowserAdapter();
+    const all = createContext(adapter);
+    await all.registry.get('help')!.execute(all.ctx, []);
+    const listOut = all.output();
+    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help']) {
+      expect(listOut).toContain(cmd);
+    }
+
+    const detail = createContext(adapter);
+    await detail.registry.get('help')!.execute(detail.ctx, ['cd']);
+    expect(detail.output()).toContain('cd <tabId>');
+
+    const unknown = createContext(adapter);
+    await unknown.registry.get('help')!.execute(unknown.ctx, ['nope']);
+    expect(unknown.output()).toContain('help: unknown command: nope');
+  });
+});
