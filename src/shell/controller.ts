@@ -7,15 +7,21 @@ import type {
   CommandContext,
   CommandRegistry,
   CompletionItem,
+  InteractiveSession,
+  SessionIO,
 } from './registry';
 import { measureWrappedPosition, truncateToWidth } from './width';
 
 export interface TerminalIO {
   readonly cols: number;
+  readonly rows?: number;
   write(data: string): void;
   writeln(data: string): void;
   clear(): void;
   onData(listener: (data: string) => void): { dispose(): void };
+  onResize?(listener: (size: { cols: number; rows: number }) => void): {
+    dispose(): void;
+  };
 }
 
 function longestCommonPrefix(values: string[]): string {
@@ -38,7 +44,13 @@ export class ShellController {
   private readonly editor = new LineEditor();
   private renderedCursorRow = 0;
   private queue: Promise<void> = Promise.resolve();
+  private sessionQueue: Promise<void> = Promise.resolve();
+  private activeSession: {
+    session: InteractiveSession;
+    resolve: () => void;
+  } | null = null;
   private dataSubscription: { dispose(): void } | null = null;
+  private resizeSubscription: { dispose(): void } | null = null;
   private unsubscribeHistory: (() => void) | null = null;
   private disposed = false;
 
@@ -64,20 +76,40 @@ export class ShellController {
       void this.handleData(data);
     });
 
+    this.resizeSubscription =
+      this.terminal.onResize?.(({ cols, rows }) => {
+        this.activeSession?.session.handleResize?.(cols, rows);
+      }) ?? null;
+
     this.writePrompt();
   }
 
   dispose(): void {
     this.disposed = true;
+    this.activeSession?.resolve();
+    this.activeSession = null;
     this.dataSubscription?.dispose();
     this.dataSubscription = null;
+    this.resizeSubscription?.dispose();
+    this.resizeSubscription = null;
     this.unsubscribeHistory?.();
     this.unsubscribeHistory = null;
   }
 
   handleData(data: string): Promise<void> {
     if (this.disposed || !data) {
-      return this.queue;
+      return this.activeSession ? this.sessionQueue : this.queue;
+    }
+    if (this.activeSession) {
+      const current = this.activeSession;
+      this.sessionQueue = this.sessionQueue
+        .then(async () => {
+          if (!this.disposed && this.activeSession === current) {
+            await current.session.handleData(data);
+          }
+        })
+        .catch(() => {});
+      return this.sessionQueue;
     }
     this.queue = this.queue.then(() => this.processData(data));
     return this.queue;
@@ -393,7 +425,49 @@ export class ShellController {
       clear: () => {
         this.clearScreen();
       },
+      runSession: (session: InteractiveSession) => this.runSession(session),
     };
+  }
+
+  private async runSession(session: InteractiveSession): Promise<void> {
+    if (this.disposed) return;
+
+    let done = false;
+    let resolveSession!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      resolveSession = () => {
+        if (done) return;
+        done = true;
+        this.activeSession = null;
+        resolve();
+      };
+    });
+
+    this.activeSession = { session, resolve: resolveSession };
+    this.sessionQueue = Promise.resolve();
+
+    const io: SessionIO = {
+      get cols() {
+        return Math.max(20, terminal.cols);
+      },
+      get rows() {
+        return Math.max(3, terminal.rows ?? 24);
+      },
+      write: (data: string) => {
+        terminal.write(data);
+      },
+      exit: resolveSession,
+    };
+    const terminal = this.terminal;
+
+    try {
+      await session.start(io);
+    } catch (err) {
+      resolveSession();
+      throw err;
+    }
+
+    await finished;
   }
 
   private clearScreen(): void {

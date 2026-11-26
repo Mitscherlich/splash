@@ -6,12 +6,14 @@ import { FakeBrowserAdapter } from './fakeAdapter';
 
 class FakeTerminal implements TerminalIO {
   cols: number;
+  rows: number;
   writes: string[] = [];
   clears = 0;
   private listeners = new Set<(data: string) => void>();
 
-  constructor(cols = 80) {
+  constructor(cols = 80, rows = 24) {
     this.cols = cols;
+    this.rows = rows;
   }
 
   write(data: string): void {

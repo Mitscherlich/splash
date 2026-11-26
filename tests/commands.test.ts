@@ -23,6 +23,9 @@ function createContext(adapter: FakeBrowserAdapter, cols = 100) {
     clear() {
       cleared += 1;
     },
+    async runSession() {
+      // No-op in isolated unit command tests unless overridden
+    },
   };
 
   return {
