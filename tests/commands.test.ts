@@ -367,7 +367,7 @@ describe('clear and help commands', () => {
     const all = createContext(adapter);
     await all.registry.get('help')!.execute(all.ctx, []);
     const listOut = all.output();
-    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help', 'man']) {
+    for (const cmd of ['ls', 'cd', 'open', 'clear', 'help', 'man', 'vim', 'cat']) {
       expect(listOut).toMatch(new RegExp(`^\\s+${cmd}\\s+`, 'm'));
     }
 
@@ -453,5 +453,53 @@ describe('man command', () => {
 
     const secondArg = await registry.get('man')!.complete!(ctx, ['ls'], '');
     expect(secondArg).toEqual([]);
+  });
+});
+
+describe('vim and cat commands', () => {
+  it('cat prints /etc/splash.d/config, validates args/paths, and completes path', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const ok = createContext(adapter);
+    await ok.registry.get('cat')!.execute(ok.ctx, ['/etc/splash.d/config']);
+    expect(ok.output()).toContain('header.piece = big-text');
+    expect(ok.output()).toContain('header.text = SPLASH');
+
+    const empty = createContext(adapter);
+    await empty.registry.get('cat')!.execute(empty.ctx, []);
+    expect(empty.output()).toContain('usage: cat /etc/splash.d/config');
+
+    const missing = createContext(adapter);
+    await missing.registry.get('cat')!.execute(missing.ctx, ['/etc/passwd']);
+    expect(missing.output()).toContain('cat: /etc/passwd: No such file or directory');
+
+    const comp = await ok.registry.get('cat')!.complete!(ok.ctx, [], '/etc/');
+    expect(comp).toEqual([
+      { value: '/etc/splash.d/config', label: 'Splash configuration file' },
+    ]);
+  });
+
+  it('vim validates path, completes /etc/splash.d/config, and has man pages for vim and cat', async () => {
+    const adapter = new FakeBrowserAdapter();
+
+    const empty = createContext(adapter);
+    await empty.registry.get('vim')!.execute(empty.ctx, []);
+    expect(empty.output()).toContain('usage: vim /etc/splash.d/config');
+
+    const wrongPath = createContext(adapter);
+    await wrongPath.registry.get('vim')!.execute(wrongPath.ctx, ['/tmp/foo']);
+    expect(wrongPath.output()).toContain('vim: only /etc/splash.d/config is editable');
+
+    const comp = await empty.registry.get('vim')!.complete!(empty.ctx, [], '/etc');
+    expect(comp).toEqual([
+      { value: '/etc/splash.d/config', label: 'Splash configuration file' },
+    ]);
+
+    for (const cmdName of ['vim', 'cat']) {
+      const manRun = createContext(adapter);
+      await manRun.registry.get('man')!.execute(manRun.ctx, [cmdName]);
+      expect(manRun.output()).toContain('NAME');
+      expect(manRun.output()).toContain('/etc/splash.d/config');
+    }
   });
 });

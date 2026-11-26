@@ -325,4 +325,32 @@ describe('ShellController end-to-end', () => {
 
     controller.dispose();
   });
+
+  it('edits and saves /etc/splash.d/config through vim and returns to shell prompt', async () => {
+    const adapter = new FakeBrowserAdapter();
+    const term = new FakeTerminal(80, 20);
+    const controller = new ShellController(term, adapter, createDefaultRegistry());
+    await controller.start();
+
+    // Launch vim /etc/splash.d/config (do not await Enter because vim runs until exited)
+    await controller.handleData('vim /etc/splash.d/config');
+    const vimRun = controller.handleData('\r');
+    // Allow microtasks for loadConfig + VimSession.start()
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Line 3 is "header.piece = big-text": move down 2 lines (jj), delete line (dd),
+    // open line above (O), type "header.piece = donut", Esc, then :wq
+    await controller.handleData('jjddOheader.piece = donut\x1b:wq\r');
+    await vimRun;
+
+    expect(adapter.config.header.piece).toBe('donut');
+
+    // Shell prompt is active again and cat reflects the updated config
+    term.resetCapture();
+    await controller.handleData('cat /etc/splash.d/config');
+    await controller.handleData('\r');
+    expect(term.plainOutput()).toContain('header.piece = donut');
+
+    controller.dispose();
+  });
 });
