@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ChromeBrowserAdapter, HISTORY_STORAGE_KEY, type ChromeApi } from '../src/adapter/chromeAdapter';
+import {
+  CONFIG_STORAGE_KEY,
+  ChromeBrowserAdapter,
+  HISTORY_STORAGE_KEY,
+  type ChromeApi,
+} from '../src/adapter/chromeAdapter';
+import { DEFAULT_CONFIG, type SplashConfig } from '../src/config/schema';
 
 function createChromeDouble() {
   const storageData: Record<string, unknown> = {};
@@ -190,5 +196,57 @@ describe('ChromeBrowserAdapter', () => {
     unsubscribe();
     emitStorageChange({ [HISTORY_STORAGE_KEY]: { newValue: ['ls'] } }, 'local');
     expect(received).toEqual([['ls', 'open docs.rs']]);
+  });
+
+  it('loads, saves, subscribes, and unsubscribes splash.config in local storage only', async () => {
+    const { api, emitStorageChange } = createChromeDouble();
+    const adapter = new ChromeBrowserAdapter(api);
+
+    expect(await adapter.loadConfig()).toEqual(DEFAULT_CONFIG);
+
+    const updated = {
+      header: {
+        piece: 'donut' as const,
+        text: 'HELLO',
+        density: 'standard' as const,
+        mono: true,
+        divider: false,
+      },
+    };
+    await adapter.saveConfig(updated);
+    expect(await adapter.loadConfig()).toEqual(updated);
+
+    const received: SplashConfig[] = [];
+    const unsubscribe = adapter.onConfigChanged((cfg) => {
+      received.push(cfg);
+    });
+
+    // Non-local storage area is ignored
+    emitStorageChange(
+      { [CONFIG_STORAGE_KEY]: { newValue: { header: { piece: 'none' } } } },
+      'sync',
+    );
+    expect(received).toEqual([]);
+
+    // Local change normalizes and delivers
+    emitStorageChange(
+      { [CONFIG_STORAGE_KEY]: { newValue: { header: { piece: 'night-coast' } } } },
+      'local',
+    );
+    expect(received).toEqual([
+      {
+        header: {
+          ...DEFAULT_CONFIG.header,
+          piece: 'night-coast',
+        },
+      },
+    ]);
+
+    unsubscribe();
+    emitStorageChange(
+      { [CONFIG_STORAGE_KEY]: { newValue: { header: { piece: 'none' } } } },
+      'local',
+    );
+    expect(received).toHaveLength(1);
   });
 });

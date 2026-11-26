@@ -1,25 +1,32 @@
 import type { BrowserAdapter, TabInfo } from '../src/adapter/types';
+import { DEFAULT_CONFIG, normalizeConfig, type SplashConfig } from '../src/config/schema';
 
 export class FakeBrowserAdapter implements BrowserAdapter {
   tabs: TabInfo[];
   currentWindowId: number;
   currentTabId: number | undefined;
   history: string[];
+  config: SplashConfig;
   openedUrls: string[] = [];
   searches: string[] = [];
   activatedTabIds: number[] = [];
   private listeners = new Set<(entries: string[]) => void>();
+  private configListeners = new Set<(config: SplashConfig) => void>();
 
   constructor(options?: {
     tabs?: TabInfo[];
     currentWindowId?: number;
     currentTabId?: number;
     history?: string[];
+    config?: SplashConfig;
   }) {
     this.tabs = options?.tabs ? options.tabs.map((t) => ({ ...t })) : [];
     this.currentWindowId = options?.currentWindowId ?? 1;
     this.currentTabId = options?.currentTabId;
     this.history = options?.history ? [...options.history] : [];
+    this.config = options?.config
+      ? normalizeConfig(options.config)
+      : normalizeConfig(DEFAULT_CONFIG);
   }
 
   async getCurrentWindowId(): Promise<number> {
@@ -79,5 +86,24 @@ export class FakeBrowserAdapter implements BrowserAdapter {
     for (const listener of this.listeners) {
       listener([...entries]);
     }
+  }
+
+  async loadConfig(): Promise<SplashConfig> {
+    return normalizeConfig(this.config);
+  }
+
+  async saveConfig(config: SplashConfig): Promise<void> {
+    const normalized = normalizeConfig(config);
+    this.config = normalized;
+    for (const listener of this.configListeners) {
+      listener(normalizeConfig(normalized));
+    }
+  }
+
+  onConfigChanged(listener: (config: SplashConfig) => void): () => void {
+    this.configListeners.add(listener);
+    return () => {
+      this.configListeners.delete(listener);
+    };
   }
 }

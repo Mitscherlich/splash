@@ -1,6 +1,8 @@
+import { normalizeConfig, type SplashConfig } from '../config/schema';
 import type { BrowserAdapter, TabInfo } from './types';
 
 export const HISTORY_STORAGE_KEY = 'splash.history';
+export const CONFIG_STORAGE_KEY = 'splash.config';
 
 export interface ChromeApi {
   tabs: {
@@ -147,6 +149,34 @@ export class ChromeBrowserAdapter implements BrowserAdapter {
       const change = changes[HISTORY_STORAGE_KEY];
       if (!change) return;
       listener(normalizeStringArray(change.newValue));
+    };
+
+    this.api.storage.onChanged.addListener(handler);
+    return () => {
+      this.api.storage.onChanged.removeListener(handler);
+    };
+  }
+
+  async loadConfig(): Promise<SplashConfig> {
+    const stored = await this.api.storage.local.get(CONFIG_STORAGE_KEY);
+    return normalizeConfig(stored[CONFIG_STORAGE_KEY]);
+  }
+
+  async saveConfig(config: SplashConfig): Promise<void> {
+    await this.api.storage.local.set({
+      [CONFIG_STORAGE_KEY]: normalizeConfig(config),
+    });
+  }
+
+  onConfigChanged(listener: (config: SplashConfig) => void): () => void {
+    const handler = (
+      changes: Record<string, { newValue?: unknown }>,
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') return;
+      const change = changes[CONFIG_STORAGE_KEY];
+      if (!change) return;
+      listener(normalizeConfig(change.newValue));
     };
 
     this.api.storage.onChanged.addListener(handler);

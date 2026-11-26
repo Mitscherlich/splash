@@ -1,3 +1,5 @@
+import type { SplashConfig } from '../config/schema';
+
 export interface TabInfo {
   id: number;
   windowId: number;
@@ -17,4 +19,7 @@ export interface BrowserAdapter {
   loadHistory(): Promise<string[]>;
   saveHistory(entries: string[]): Promise<void>;
   onHistoryChanged(listener: (entries: string[]) => void): () => void;
+  loadConfig(): Promise<SplashConfig>;
+  saveConfig(config: SplashConfig): Promise<void>;
+  onConfigChanged(listener: (config: SplashConfig) => void): () => void;
 }
