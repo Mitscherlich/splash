@@ -22,7 +22,7 @@ export const exportCommand: CommandDefinition = {
     ],
   },
 
-  execute(ctx, args) {
+  async execute(ctx, args) {
     if (args.length === 0) {
       for (const line of formatSortedEnv(ctx.envStore.getAll())) {
         ctx.writeln(line);
@@ -42,7 +42,7 @@ export const exportCommand: CommandDefinition = {
         ctx.writeError(`export: invalid identifier: "${key}"`);
         return;
       }
-      ctx.envStore.set(key, value);
+      await ctx.envStore.set(key, value);
     }
   },
 };
@@ -54,10 +54,10 @@ export const unsetCommand: CommandDefinition = {
   manual: {
     description:
       'Removes one or more environment variables for the current session, including masking defaults loaded from /etc/splash.d/config.',
-    examples: ['unset EDITOR'],
+    examples: ['unset EDITOR', 'unset LANG'],
   },
 
-  execute(ctx, args) {
+  async execute(ctx, args) {
     if (args.length === 0) {
       ctx.writeError('usage: unset <KEY...>');
       return;
@@ -68,7 +68,7 @@ export const unsetCommand: CommandDefinition = {
         ctx.writeError(`unset: invalid identifier: "${key}"`);
         return;
       }
-      ctx.envStore.unset(key);
+      await ctx.envStore.unset(key);
     }
   },
 };

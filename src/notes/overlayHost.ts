@@ -1,5 +1,6 @@
 import type { BrowserAdapter } from '../adapter/types';
 import type {
+  NoteGuiOptions,
   NoteVimEditorOptions,
   NoteVimEditorResult,
   ShellOverlayHost,
@@ -49,9 +50,13 @@ export class BrowserOverlayHost implements ShellOverlayHost {
     top?.focus();
   }
 
-  async openNoteGui(adapter: BrowserAdapter): Promise<void> {
+  async openNoteGui(
+    adapter: BrowserAdapter,
+    options?: NoteGuiOptions,
+  ): Promise<void> {
     const overlay = new NoteGuiOverlay({
       adapter,
+      locale: options?.locale,
       doc: this.doc,
       mountParent: this.mountParent,
       createTerminal: this.createTerminal,
@@ -73,6 +78,7 @@ export class BrowserOverlayHost implements ShellOverlayHost {
       noteId: options.noteId,
       initialContent: options.initialContent,
       standalone: true,
+      locale: options.locale,
       doc: this.doc,
       mountParent: this.mountParent,
       createTerminal: this.createTerminal,

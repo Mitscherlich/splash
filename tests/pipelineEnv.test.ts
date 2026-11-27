@@ -185,7 +185,7 @@ describe('Layered environment variables (config < session < inline)', () => {
     const adapter = new FakeBrowserAdapter({
       config: {
         header: { ...DEFAULT_CONFIG.header },
-        env: { EDITOR: 'vim' },
+        env: { EDITOR: 'vim', LANG: '' },
       },
     });
     const term = new FakeTerminal();
@@ -231,7 +231,7 @@ describe('Layered environment variables (config < session < inline)', () => {
     await runLine(controller, 'export EDITOR=custom FOO=bar');
     await adapter.saveConfig({
       header: { ...DEFAULT_CONFIG.header },
-      env: { EDITOR: 'from-config' },
+      env: { EDITOR: 'from-config', LANG: '' },
     });
     await runLine(controller, 'probe');
     expect(observedEditors.at(-1)).toBe('custom');

@@ -1,4 +1,5 @@
 import type { BrowserAdapter } from '../adapter/types';
+import type { SupportedLocale } from '../i18n/locale';
 import { sanitizeTerminalText } from '../shell/width';
 import { normalizeNotesState, type NoteItem } from './types';
 
@@ -13,7 +14,11 @@ export function formatNoteSummary(content: string): string {
   return cleaned.length > 0 ? cleaned : '(empty)';
 }
 
-export function formatNoteTimestamp(ts: number, now = Date.now()): string {
+export function formatNoteTimestamp(
+  ts: number,
+  now = Date.now(),
+  locale: SupportedLocale = 'en',
+): string {
   if (!Number.isFinite(ts) || ts <= 0) return '';
   const date = new Date(ts);
   const current = new Date(now);
@@ -23,7 +28,7 @@ export function formatNoteTimestamp(ts: number, now = Date.now()): string {
   const sameYear = date.getFullYear() === current.getFullYear();
   const sameMonth = sameYear && date.getMonth() === current.getMonth();
   if (sameMonth && date.getDate() === current.getDate()) {
-    return `今天 ${hh}:${mm}`;
+    return locale === 'zh' ? `今天 ${hh}:${mm}` : `Today ${hh}:${mm}`;
   }
 
   const yesterday = new Date(current);
@@ -33,7 +38,7 @@ export function formatNoteTimestamp(ts: number, now = Date.now()): string {
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate()
   ) {
-    return `昨天 ${hh}:${mm}`;
+    return locale === 'zh' ? `昨天 ${hh}:${mm}` : `Yesterday ${hh}:${mm}`;
   }
 
   const month = String(date.getMonth() + 1).padStart(2, '0');

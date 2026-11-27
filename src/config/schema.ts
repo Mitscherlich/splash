@@ -26,6 +26,7 @@ export interface HeaderConfig {
 
 export interface EnvConfig {
   EDITOR: string;
+  LANG: string;
 }
 
 export interface SplashConfig {
@@ -46,6 +47,7 @@ export const DEFAULT_CONFIG: SplashConfig = {
   },
   env: {
     EDITOR: '',
+    LANG: '',
   },
 };
 
@@ -119,6 +121,13 @@ export function normalizeConfig(raw: unknown): SplashConfig {
       ? cleanedEditor
       : DEFAULT_CONFIG.env.EDITOR;
 
+  const cleanedLang =
+    typeof e.LANG === 'string' ? sanitizeTerminalText(e.LANG).trim() : '';
+  const lang =
+    cleanedLang.length <= MAX_ENV_VALUE_LENGTH
+      ? cleanedLang
+      : DEFAULT_CONFIG.env.LANG;
+
   return {
     header: {
       piece,
@@ -129,6 +138,7 @@ export function normalizeConfig(raw: unknown): SplashConfig {
     },
     env: {
       EDITOR: editor,
+      LANG: lang,
     },
   };
 }
@@ -149,6 +159,8 @@ export function serializeConfig(config: SplashConfig): string {
     `header.divider = ${c.header.divider}`,
     '# env.EDITOR: vim | (empty) (default editor for `note <id>`)',
     c.env.EDITOR ? `env.EDITOR = ${c.env.EDITOR}` : 'env.EDITOR =',
+    '# env.LANG: en_US.UTF-8 | zh_CN.UTF-8 | C (browser default)',
+    c.env.LANG ? `env.LANG = ${c.env.LANG}` : 'env.LANG =',
   ].join('\n');
 }
 
@@ -238,6 +250,17 @@ export function parseConfigText(input: string): ConfigParseResult {
           };
         }
         env.EDITOR = cleaned;
+        break;
+      }
+      case 'env.LANG': {
+        const cleaned = sanitizeTerminalText(rawValue).trim();
+        if (cleaned.length > MAX_ENV_VALUE_LENGTH) {
+          return {
+            ok: false,
+            error: `line ${lineNum}: invalid env.LANG (expected at most ${MAX_ENV_VALUE_LENGTH} chars)`,
+          };
+        }
+        env.LANG = cleaned;
         break;
       }
       default:

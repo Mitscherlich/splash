@@ -1,4 +1,9 @@
 import type { BrowserAdapter } from '../adapter/types';
+import {
+  getNoteMessages,
+  resolveLocale,
+  type SupportedLocale,
+} from '../i18n/locale';
 import type { NoteVimEditorResult, SessionIO } from '../shell/registry';
 import { VimSession } from '../shell/vimSession';
 import { saveNoteWithConflictPolicy } from './store';
@@ -54,6 +59,7 @@ export interface NoteVimModalOptions {
   noteId: number | null;
   initialContent: string;
   standalone?: boolean;
+  locale?: SupportedLocale;
   doc?: OverlayDocumentLike;
   mountParent?: OverlayElementLike;
   createTerminal: ModalTerminalFactory;
@@ -70,6 +76,7 @@ export class NoteVimModal {
   private currentNoteId: number | null;
   private readonly initialContent: string;
   private readonly standalone: boolean;
+  private readonly locale: SupportedLocale;
   private readonly doc: OverlayDocumentLike;
   private readonly mountParent: OverlayElementLike;
   private readonly createTerminal: ModalTerminalFactory;
@@ -81,6 +88,7 @@ export class NoteVimModal {
     this.currentNoteId = options.noteId;
     this.initialContent = options.initialContent;
     this.standalone = options.standalone ?? true;
+    this.locale = options.locale ?? resolveLocale();
     this.doc =
       options.doc ?? (document as unknown as OverlayDocumentLike);
     this.mountParent = options.mountParent ?? this.doc.body;
@@ -96,6 +104,7 @@ export class NoteVimModal {
       let savedId: number | null = null;
       let lastKnownContent = this.initialContent;
       let savingLocally = false;
+      const msg = getNoteMessages(this.locale);
 
       const backdrop = this.doc.createElement('div');
       backdrop.className = this.standalone
@@ -132,12 +141,12 @@ export class NoteVimModal {
       const saveBtn = this.doc.createElement('button');
       saveBtn.className = 'splash-ascii-btn primary';
       saveBtn.setAttribute('type', 'button');
-      saveBtn.textContent = ':wq 保存并关闭';
+      saveBtn.textContent = msg.vimSaveBtn;
 
       const quitBtn = this.doc.createElement('button');
       quitBtn.className = 'splash-ascii-btn';
       quitBtn.setAttribute('type', 'button');
-      quitBtn.textContent = ':q! 放弃';
+      quitBtn.textContent = msg.vimQuitBtn;
 
       actions.appendChild(saveBtn);
       actions.appendChild(quitBtn);
@@ -150,8 +159,7 @@ export class NoteVimModal {
 
       const hintBar = this.doc.createElement('div');
       hintBar.className = 'splash-vim-hint';
-      hintBar.textContent =
-        'NORMAL/INSERT · h/j/k/l 移动 · i/a/o 编辑 · dd 删行 · u 撤销 · :w 保存 · :wq 保存退出 · :q! 放弃';
+      hintBar.textContent = msg.vimHint;
 
       frame.appendChild(topbar);
       frame.appendChild(termHost);
@@ -308,11 +316,11 @@ export class NoteVimModal {
         if (this.closed || savingLocally || this.currentNoteId === null) return;
         const found = state.items.find((item) => item.id === this.currentNoteId);
         if (!found) {
-          remoteNotice.textContent = `⚠ 其他标签页已删除 #${this.currentNoteId}（保存将另存为新 ID）`;
+          remoteNotice.textContent = msg.vimRemoteDeleted(this.currentNoteId);
           remoteNotice.hidden = false;
         } else if (found.content !== lastKnownContent) {
           lastKnownContent = found.content;
-          remoteNotice.textContent = `⚠ 其他标签页已更新 #${this.currentNoteId}（当前缓冲区保留）`;
+          remoteNotice.textContent = msg.vimRemoteUpdated(this.currentNoteId);
           remoteNotice.hidden = false;
         }
       });

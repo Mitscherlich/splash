@@ -1,4 +1,10 @@
 import type { BrowserAdapter } from '../adapter/types';
+import {
+  getNoteMessages,
+  resolveLocale,
+  type NoteMessages,
+  type SupportedLocale,
+} from '../i18n/locale';
 import type { NoteVimEditorOptions, NoteVimEditorResult } from '../shell/registry';
 import { formatNoteTimestamp, removeNotesInAdapter } from './store';
 import { normalizeNotesState, type NoteItem } from './types';
@@ -16,6 +22,7 @@ const SHADOW_PATTERN = Array.from({ length: 18 }, () => '░'.repeat(46)).join('
 
 export interface NoteGuiOverlayOptions {
   adapter: BrowserAdapter;
+  locale?: SupportedLocale;
   doc?: OverlayDocumentLike;
   mountParent?: OverlayElementLike;
   createTerminal?: ModalTerminalFactory;
@@ -32,6 +39,8 @@ function defaultColumnCount(): number {
 
 export class NoteGuiOverlay {
   private readonly adapter: BrowserAdapter;
+  private readonly locale: SupportedLocale;
+  private readonly msg: NoteMessages;
   private readonly doc: OverlayDocumentLike;
   private readonly mountParent: OverlayElementLike;
   private readonly createTerminal?: ModalTerminalFactory;
@@ -57,6 +66,8 @@ export class NoteGuiOverlay {
 
   constructor(options: NoteGuiOverlayOptions) {
     this.adapter = options.adapter;
+    this.locale = options.locale ?? resolveLocale();
+    this.msg = getNoteMessages(this.locale);
     this.doc =
       options.doc ?? (document as unknown as OverlayDocumentLike);
     this.mountParent = options.mountParent ?? this.doc.body;
@@ -101,11 +112,11 @@ export class NoteGuiOverlay {
 
       const sigil = this.doc.createElement('span');
       sigil.className = 'splash-pinboard-sigil';
-      sigil.textContent = '╔═[ PINBOARD ]═╗';
+      sigil.textContent = this.msg.pinboardSigil;
 
       const title = this.doc.createElement('span');
       title.className = 'splash-pinboard-title';
-      title.textContent = 'SPLASH NOTES';
+      title.textContent = this.msg.pinboardTitle;
 
       const countEl = this.doc.createElement('span');
       countEl.className = 'splash-pinboard-count';
@@ -121,24 +132,24 @@ export class NoteGuiOverlay {
       const newBtn = this.doc.createElement('button');
       newBtn.className = 'splash-ascii-btn primary';
       newBtn.setAttribute('type', 'button');
-      newBtn.textContent = '[n] + 新建';
+      newBtn.textContent = this.msg.btnNew;
 
       const editBtn = this.doc.createElement('button');
       editBtn.className = 'splash-ascii-btn';
       editBtn.setAttribute('type', 'button');
-      editBtn.textContent = '[e] Vim 编辑';
+      editBtn.textContent = this.msg.btnEdit;
       this.editBtnEl = editBtn;
 
       const delBtn = this.doc.createElement('button');
       delBtn.className = 'splash-ascii-btn danger';
       delBtn.setAttribute('type', 'button');
-      delBtn.textContent = '[d] 删除';
+      delBtn.textContent = this.msg.btnDelete;
       this.delBtnEl = delBtn;
 
       const closeBtn = this.doc.createElement('button');
       closeBtn.className = 'splash-ascii-btn';
       closeBtn.setAttribute('type', 'button');
-      closeBtn.textContent = '[Esc] 关闭';
+      closeBtn.textContent = this.msg.btnClose;
 
       toolbar.appendChild(newBtn);
       toolbar.appendChild(editBtn);
@@ -432,13 +443,18 @@ export class NoteGuiOverlay {
     let result: NoteVimEditorResult = { savedId: null };
     try {
       if (this.customOpenVimModal) {
-        result = await this.customOpenVimModal({ noteId, initialContent });
+        result = await this.customOpenVimModal({
+          noteId,
+          initialContent,
+          locale: this.locale,
+        });
       } else if (this.createTerminal) {
         const modal = new NoteVimModal({
           adapter: this.adapter,
           noteId,
           initialContent,
           standalone: false,
+          locale: this.locale,
           doc: this.doc,
           mountParent: this.dialogEl,
           createTerminal: this.createTerminal,
@@ -465,7 +481,7 @@ export class NoteGuiOverlay {
 
   private renderAll(): void {
     if (this.countEl) {
-      this.countEl.textContent = `${this.items.length} 条备忘 · 本地同步`;
+      this.countEl.textContent = this.msg.countText(this.items.length);
     }
     const hasNotes = this.items.length > 0;
     if (this.editBtnEl) this.editBtnEl.hidden = !hasNotes;
@@ -507,24 +523,24 @@ export class NoteGuiOverlay {
       idSpan.textContent = '#0';
 
       const emptyTag = this.doc.createElement('span');
-      emptyTag.textContent = 'EMPTY PINBOARD';
+      emptyTag.textContent = this.msg.emptyTag;
 
       topRule.appendChild(idSpan);
       topRule.appendChild(emptyTag);
 
       const emptyTitle = this.doc.createElement('div');
       emptyTitle.className = 'splash-empty-title';
-      emptyTitle.textContent = '暂无备忘记录';
+      emptyTitle.textContent = this.msg.emptyTitle;
 
       const emptySub = this.doc.createElement('div');
       emptySub.className = 'splash-empty-sub';
-      emptySub.textContent = '按 [n] 钉上第一张便签，或命令行执行 note new <内容>';
+      emptySub.textContent = this.msg.emptySub;
 
       const cardFooter = this.doc.createElement('div');
       cardFooter.className = 'splash-card-footer';
 
       const hintSpan = this.doc.createElement('span');
-      hintSpan.textContent = '0 条';
+      hintSpan.textContent = this.msg.emptyCount;
 
       const dogear = this.doc.createElement('span');
       dogear.className = 'splash-card-dogear';
@@ -545,7 +561,7 @@ export class NoteGuiOverlay {
       const cta = this.doc.createElement('button');
       cta.className = 'splash-ascii-btn primary';
       cta.setAttribute('type', 'button');
-      cta.textContent = '[n] + 新建第一条备忘';
+      cta.textContent = this.msg.emptyCta;
       cta.addEventListener('click', () => {
         void this.launchVimEditor(null, '');
       });
@@ -591,7 +607,7 @@ export class NoteGuiOverlay {
       idSpan.textContent = `#${note.id}`;
 
       const timeSpan = this.doc.createElement('span');
-      timeSpan.textContent = formatNoteTimestamp(note.updatedAt, now);
+      timeSpan.textContent = formatNoteTimestamp(note.updatedAt, now, this.locale);
 
       topRule.appendChild(idSpan);
       topRule.appendChild(timeSpan);
@@ -601,7 +617,8 @@ export class NoteGuiOverlay {
 
       const titleEl = this.doc.createElement('div');
       titleEl.className = 'splash-card-title';
-      titleEl.textContent = titleLine.trim().length > 0 ? titleLine : '(empty)';
+      titleEl.textContent =
+        titleLine.trim().length > 0 ? titleLine : this.msg.emptyNoteTitle;
 
       const bodyLines = this.doc.createElement('div');
       bodyLines.className = 'splash-card-lines';
@@ -615,7 +632,7 @@ export class NoteGuiOverlay {
       cardFooter.className = 'splash-card-footer';
 
       const countSpan = this.doc.createElement('span');
-      countSpan.textContent = `${rawLines.length} 行`;
+      countSpan.textContent = this.msg.lineCount(rawLines.length);
 
       const dogear = this.doc.createElement('span');
       dogear.className = 'splash-card-dogear';
@@ -665,7 +682,7 @@ export class NoteGuiOverlay {
     if (this.pendingDeleteId !== null) {
       const prompt = this.doc.createElement('span');
       prompt.className = 'splash-confirm-text';
-      prompt.textContent = `确认删除 note #${this.pendingDeleteId}？（删除后 ID 不复用）`;
+      prompt.textContent = this.msg.confirmDelete(this.pendingDeleteId);
 
       const confirmActions = this.doc.createElement('div');
       confirmActions.className = 'splash-confirm-actions';
@@ -673,7 +690,7 @@ export class NoteGuiOverlay {
       const yesBtn = this.doc.createElement('button');
       yesBtn.className = 'splash-ascii-btn danger';
       yesBtn.setAttribute('type', 'button');
-      yesBtn.textContent = '[y] 确认删除';
+      yesBtn.textContent = this.msg.confirmYes;
       yesBtn.addEventListener('click', () => {
         void this.confirmDelete();
       });
@@ -681,7 +698,7 @@ export class NoteGuiOverlay {
       const noBtn = this.doc.createElement('button');
       noBtn.className = 'splash-ascii-btn';
       noBtn.setAttribute('type', 'button');
-      noBtn.textContent = '[n/Esc] 取消';
+      noBtn.textContent = this.msg.confirmNo;
       noBtn.addEventListener('click', () => {
         this.pendingDeleteId = null;
         this.renderFooter();
@@ -696,15 +713,14 @@ export class NoteGuiOverlay {
 
     const hints = this.doc.createElement('div');
     hints.className = 'splash-keyhints';
-    hints.textContent =
-      'h/j/k/l 移动选中 · e/Enter Vim 编辑 · n 新建 · d 删除 · q/Esc 关闭';
+    hints.textContent = this.msg.keyHints;
 
     const status = this.doc.createElement('div');
     status.className = 'splash-selection-status';
     status.textContent =
       this.selectedId !== null
-        ? `已选中 #${this.selectedId} · 按 e 或双击进入 Vim`
-        : '按 n 新建备忘';
+        ? this.msg.selectedStatus(this.selectedId)
+        : this.msg.emptyStatus;
 
     footer.replaceChildren(hints, status);
   }

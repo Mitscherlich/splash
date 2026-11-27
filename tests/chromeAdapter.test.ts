@@ -248,6 +248,7 @@ describe('ChromeBrowserAdapter', () => {
       },
       env: {
         EDITOR: 'vim',
+        LANG: '',
       },
     };
     await adapter.saveConfig(updated);

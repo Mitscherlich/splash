@@ -11,6 +11,7 @@ A minimal terminal new tab shell for Chrome, built with [`@xterm/xterm`](https:/
 - **Autojump-style URL Autocomplete (`open`)** — Reads your Chrome browsing history locally and ranks matches by **frecency** (visit count, typed count, and recency decay). Type fragments or multiple keywords (e.g. `open gh` or `open gh splash`) for a live inline suggestion, press `Tab` or `→` to accept, cycle candidates with `Tab` / `Shift+Tab`, and press `Enter` to open. Pressing `Enter` without accepting a suggestion falls back to Chrome's default search engine.
 - **Animated ASCII Headers** — Ships with four bundled `ascii.rest` pieces (`big-text`, `night-coast`, `aurora-fjord`, `donut`) plus `none`, with configurable banner text, density, monochrome mode, and divider hairline.
 - **In-terminal Vim Configuration (`vim /etc/splash.d/config`)** — Edit Splash settings inside an alternate-screen modal Vim editor with live validation and instant hot-reload across all open Splash tabs.
+- **Local Notes, Shell Pipelines & ASCII Pinboard (`note`)** — Capture quick notes from the CLI (`note new`, `note ls`, `note rm`, `note <id> [...content]`) or shell pipelines (`echo "text" | note <id>`), edit in a floating Vim modal when `EDITOR=vim`, or open the ASCII skeuomorphic pinboard overlay (`note --gui`) with bilingual English/Chinese UI controlled by `LANG` (`export LANG=zh_CN.UTF-8` / `en_US.UTF-8` / `C`, persisted in `/etc/splash.d/config`).
 
 ## Screenshots
 
@@ -22,6 +23,14 @@ A minimal terminal new tab shell for Chrome, built with [`@xterm/xterm`](https:/
 
 ![Splash alternate-screen vim editor for /etc/splash.d/config with aurora-fjord animated header](docs/screenshots/vim-config.png)
 
+### ASCII Pinboard Overlay (`note --gui`)
+
+![Splash ASCII skeuomorphic pinboard overlay opened by note --gui](docs/screenshots/note-gui.png)
+
+### Floating Vim Note Editor (`EDITOR=vim note <id>`)
+
+![Splash floating Vim modal editor opened via EDITOR=vim note 1](docs/screenshots/note-vim.png)
+
 ## Commands
 
 | Command | Usage | Description |
@@ -29,8 +38,13 @@ A minimal terminal new tab shell for Chrome, built with [`@xterm/xterm`](https:/
 | `ls` | `ls [-a \| --all]` | List open Chrome tabs across all windows (`-a` includes new tab pages). Click any URL (or title on narrow windows) to focus that tab. |
 | `cd` | `cd <tabId>` | Activate a tab by its exact Chrome tab ID (supports Tab completion and cross-window focus). |
 | `open` | `open <url \| query>` | Open a URL in a new active tab (`http://` auto-added for `localhost`/IPs, `https://` for bare domains), or fall back to Chrome's default search engine. Supports autojump-style history autocomplete. |
+| `note` | `note <new \| ls \| rm \| <id> \| --gui>` | Create (`note new <content>`), list (`note ls`), remove (`note rm <id...>`), read/overwrite (`note <id> [...content]` or `echo <content> \| note <id>`), edit in floating Vim (`EDITOR=vim note <id>`), or manage notes on an ASCII pinboard (`note --gui`). |
+| `echo` | `echo [-n] [...text]` | Print arguments to stdout (`-n` omits trailing newline); compose with pipes like `echo "todo" \| note 1`. |
+| `export` | `export [KEY=VALUE ...]` | Set session environment variables (or list active ones). `export LANG=...` persists to `/etc/splash.d/config`. |
+| `unset` | `unset <KEY...>` | Unset environment variables for the session (`unset LANG` clears persisted `env.LANG`). |
+| `env` | `env` | Print all active non-empty environment variables. |
 | `vim` | `vim /etc/splash.d/config` | Open the alternate-screen Vim editor for Splash configuration with live hot-reload on save (`:w`, `:wq`, `:x`, `:q`, `:q!`). |
-| `cat` | `cat /etc/splash.d/config` | Print the current normalized configuration without opening an editor. |
+| `cat` | `cat [/etc/splash.d/config]` | Print the current normalized configuration, or pass through piped `stdin` (e.g. `note 1 \| cat`). |
 | `clear` | `clear` | Clear the terminal screen (`Ctrl+L` also clears while preserving the current input buffer). |
 | `help` | `help [command]` | List all built-in commands or show concise usage for one command. |
 | `man` | `man <command>` | Display the full manual page, options, examples, and notes for a command. |
@@ -60,6 +74,8 @@ Run `vim /etc/splash.d/config` to edit settings and `:wq` to apply them live acr
 | `header.density` | `compact` \| `standard` \| `spacious` | `compact` | Header height and ASCII scale. |
 | `header.mono` | `true` \| `false` | `false` | Render colored scenes (`night-coast`, `aurora-fjord`) in single theme ink. |
 | `header.divider` | `true` \| `false` | `true` | Toggle the subtle hairline divider between header and terminal. |
+| `env.EDITOR` | `vim` \| *(empty)* | *(empty)* | Default editor for `note <id>` (set to `vim` to open the floating Vim modal). |
+| `env.LANG` | `en_US.UTF-8` \| `zh_CN.UTF-8` \| `C` | *(empty)* | UI language for `note --gui` and modal (`C` or empty follows browser default, falling back to English; also persisted via `export LANG=...`). |
 
 ## Installation
 
@@ -86,7 +102,7 @@ Splash runs entirely locally in your browser with no external telemetry or backe
 - `tabs` — List open tabs (`ls`), focus tabs (`cd`), and open new tabs (`open`).
 - `history` — Read local browsing history for `open` autojump-style URL autocomplete.
 - `search` — Fall back to your configured Chrome default search engine for non-URL `open` queries.
-- `storage` — Persist command history and `/etc/splash.d/config` in `chrome.storage.local` and sync changes across Splash tabs.
+- `storage` — Persist command history, local notes, and `/etc/splash.d/config` in `chrome.storage.local` and sync changes across Splash tabs.
 
 ## Development
 

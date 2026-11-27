@@ -180,6 +180,7 @@ describe('note command end-to-end via ShellController', () => {
     expect(ui.openNoteVimEditor).toHaveBeenCalledWith(adapter, {
       noteId: 1,
       initialContent: 'initial text',
+      locale: expect.any(String),
     });
 
     // export EDITOR=vim + note 1 | cat forces plain-text stdout without opening modal
@@ -200,6 +201,7 @@ describe('note command end-to-end via ShellController', () => {
     expect(ui.openNoteVimEditor).toHaveBeenCalledWith(adapter, {
       noteId: null,
       initialContent: '',
+      locale: expect.any(String),
     });
 
     // Unsupported EDITOR errors clearly
@@ -207,15 +209,23 @@ describe('note command end-to-end via ShellController', () => {
     await runLine(controller, 'EDITOR=nano note 1');
     expect(term.plainOutput()).toContain('unsupported EDITOR "nano"');
 
-    // note --gui and note -g open Corkboard overlay
+    // note --gui and note -g open Corkboard overlay and respect export LANG=zh_CN.UTF-8 / en_US.UTS-8 / C
+    await runLine(controller, 'export LANG=zh_CN.UTF-8');
     await runLine(controller, 'note --gui');
+    expect(ui.openNoteGui).toHaveBeenLastCalledWith(adapter, { locale: 'zh' });
+
+    await runLine(controller, 'export LANG=en_US.UTS-8');
     await runLine(controller, 'note -g');
-    expect(ui.openNoteGui).toHaveBeenCalledTimes(2);
+    expect(ui.openNoteGui).toHaveBeenLastCalledWith(adapter, { locale: 'en' });
+
+    await runLine(controller, 'export LANG=C');
+    await runLine(controller, 'note --gui');
+    expect(ui.openNoteGui).toHaveBeenCalledTimes(3);
 
     // note --gui cannot be piped out
     term.reset();
     await runLine(controller, 'note --gui | cat');
-    expect(ui.openNoteGui).toHaveBeenCalledTimes(2);
+    expect(ui.openNoteGui).toHaveBeenCalledTimes(3);
     expect(term.plainOutput()).toContain('cannot be piped');
 
     controller.dispose();

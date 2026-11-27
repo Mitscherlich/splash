@@ -25,6 +25,7 @@ describe('SplashConfig schema serialize/parse', () => {
       },
       env: {
         EDITOR: 'vim',
+        LANG: 'en_US.UTF-8',
       },
     };
     const serialized = serializeConfig(custom);
@@ -116,6 +117,7 @@ header.density = standard
       },
       env: {
         EDITOR: '',
+        LANG: '',
       },
     });
   });

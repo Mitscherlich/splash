@@ -100,6 +100,9 @@ export class ShellController {
     if (config.env?.EDITOR) {
       next.EDITOR = config.env.EDITOR;
     }
+    if (config.env?.LANG) {
+      next.LANG = config.env.LANG;
+    }
     this.configEnv = next;
   }
 
@@ -122,12 +125,35 @@ export class ShellController {
     return merged;
   }
 
+  private async persistConfigLang(value: string): Promise<void> {
+    const current = await this.adapter.loadConfig();
+    const next = {
+      ...current,
+      env: {
+        ...current.env,
+        LANG: value,
+      },
+    };
+    await this.adapter.saveConfig(next);
+    this.applyConfigEnv(next);
+  }
+
   private readonly envStore: EnvStore = {
     getAll: () => this.resolveEnv(),
-    set: (key: string, value: string) => {
+    set: async (key: string, value: string) => {
+      if (key === 'LANG') {
+        this.sessionEnv.delete('LANG');
+        await this.persistConfigLang(value);
+        return;
+      }
       this.sessionEnv.set(key, value);
     },
-    unset: (key: string) => {
+    unset: async (key: string) => {
+      if (key === 'LANG') {
+        this.sessionEnv.delete('LANG');
+        await this.persistConfigLang('');
+        return;
+      }
       this.sessionEnv.set(key, null);
     },
   };
@@ -489,7 +515,7 @@ export class ShellController {
     // Bare single-stage KEY=VALUE assignments update the session environment
     if (parsed.stages.length === 1 && parsed.stages[0]!.command === null) {
       for (const [key, value] of Object.entries(parsed.stages[0]!.env)) {
-        this.envStore.set(key, value);
+        await this.envStore.set(key, value);
       }
       this.writePrompt();
       return;

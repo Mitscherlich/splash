@@ -1,3 +1,4 @@
+import { resolveLocale } from '../i18n/locale';
 import {
   createNoteInAdapter,
   formatNoteSummary,
@@ -73,6 +74,7 @@ export const noteCommand: CommandDefinition = {
     }
 
     const sub = args[0]!;
+    const locale = resolveLocale(ctx.env.LANG);
 
     // 1. note --gui / note -g
     if (sub === '--gui' || sub === '-g') {
@@ -88,7 +90,7 @@ export const noteCommand: CommandDefinition = {
         ctx.writeError('note: GUI overlay is unavailable in this environment');
         return;
       }
-      await ctx.ui.openNoteGui(ctx.adapter);
+      await ctx.ui.openNoteGui(ctx.adapter, { locale });
       return;
     }
 
@@ -118,6 +120,7 @@ export const noteCommand: CommandDefinition = {
         const res = await ctx.ui.openNoteVimEditor(ctx.adapter, {
           noteId: null,
           initialContent: '',
+          locale,
         });
         if (res.savedId !== null) {
           ctx.writeln(ansi.active(`created note #${res.savedId}`));
@@ -156,7 +159,7 @@ export const noteCommand: CommandDefinition = {
           continue;
         }
 
-        const timeLabel = formatNoteTimestamp(item.updatedAt, now);
+        const timeLabel = formatNoteTimestamp(item.updatedAt, now, locale);
         const timeWidth = stringDisplayWidth(timeLabel);
         const showTime = timeLabel.length > 0 && ctx.cols >= idWidth + timeWidth + 14;
         const summaryBudget = Math.max(
@@ -257,6 +260,7 @@ export const noteCommand: CommandDefinition = {
       await ctx.ui.openNoteVimEditor(ctx.adapter, {
         noteId: note.id,
         initialContent: note.content,
+        locale,
       });
       return;
     }

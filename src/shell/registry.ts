@@ -1,4 +1,5 @@
 import type { BrowserAdapter } from '../adapter/types';
+import type { SupportedLocale } from '../i18n/locale';
 
 export interface CompletionItem {
   value: string;
@@ -20,13 +21,18 @@ export interface InteractiveSession {
 
 export interface EnvStore {
   getAll(): Record<string, string>;
-  set(key: string, value: string): void;
-  unset(key: string): void;
+  set(key: string, value: string): void | Promise<void>;
+  unset(key: string): void | Promise<void>;
+}
+
+export interface NoteGuiOptions {
+  locale?: SupportedLocale;
 }
 
 export interface NoteVimEditorOptions {
   noteId: number | null;
   initialContent: string;
+  locale?: SupportedLocale;
 }
 
 export interface NoteVimEditorResult {
@@ -35,7 +41,7 @@ export interface NoteVimEditorResult {
 
 export interface ShellOverlayHost {
   hasActiveOverlay?(): boolean;
-  openNoteGui(adapter: BrowserAdapter): Promise<void>;
+  openNoteGui(adapter: BrowserAdapter, options?: NoteGuiOptions): Promise<void>;
   openNoteVimEditor(
     adapter: BrowserAdapter,
     options: NoteVimEditorOptions,

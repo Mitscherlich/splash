@@ -239,6 +239,7 @@ describe('NoteVimModal', () => {
       adapter,
       noteId: 1,
       initialContent: 'alpha',
+      locale: 'en',
       doc,
       mountParent: body,
       createTerminal: () => fakeTerm,
@@ -247,13 +248,14 @@ describe('NoteVimModal', () => {
     const runPromise = modal.open();
     expect(fakeTerm.focused).toBe(true);
     expect(body.collectText()).toContain('note #1');
+    expect(body.collectText()).toContain(':wq Save & Close');
 
     // Another tab deletes note #1 while modal is open
     adapter.emitExternalNotesChange({
       nextId: 3,
       items: [{ id: 2, content: 'beta', createdAt: 20, updatedAt: 20 }],
     });
-    expect(body.collectText()).toContain('已删除');
+    expect(body.collectText()).toContain('deleted in another tab');
 
     // User appends "!" and runs :wq -> must save as new note #3 (never resurrect #1)
     fakeTerm.emitData('A!\x1b:wq\r');
@@ -284,11 +286,15 @@ describe('NoteGuiOverlay (ASCII Corkboard) and BrowserOverlayHost', () => {
 
     const overlay = new NoteGuiOverlay({
       adapter,
+      locale: 'zh',
       doc,
       mountParent: body,
       getColumnCount: () => 3,
       openVimModal: async (opts) => {
-        openedEditors.push(opts);
+        openedEditors.push({
+          noteId: opts.noteId,
+          initialContent: opts.initialContent,
+        });
         return { savedId: opts.noteId };
       },
     });
@@ -398,10 +404,12 @@ describe('NoteGuiOverlay (ASCII Corkboard) and BrowserOverlayHost', () => {
       },
     });
 
-    const guiPromise = host.openNoteGui(adapter);
+    const guiPromise = host.openNoteGui(adapter, { locale: 'en' });
     await new Promise((r) => setTimeout(r, 0));
     expect(host.hasActiveOverlay()).toBe(true);
     expect(overlayStates).toEqual([true]);
+    expect(body.collectText()).toContain('[n] + New');
+    expect(body.collectText()).toContain('[e] Edit in Vim');
 
     const dialog = body.findAll((el) => el.classList.contains('splash-pinboard'))[0]!;
     const surface = body.findAll((el) => el.className === 'splash-cork-surface')[0]!;
@@ -414,7 +422,7 @@ describe('NoteGuiOverlay (ASCII Corkboard) and BrowserOverlayHost', () => {
     expect(terminals).toHaveLength(0);
     const ctrlD = dialog.dispatch('keydown', { key: 'd', ctrlKey: true });
     expect(ctrlD.defaultPrevented).toBe(false);
-    expect(body.collectText()).not.toContain('确认删除');
+    expect(body.collectText()).not.toContain('Delete note #');
 
     // Tab key is trapped inside overlay
     const tabEv = dialog.dispatch('keydown', { key: 'Tab' });
