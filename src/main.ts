@@ -5,6 +5,8 @@ import { ChromeBrowserAdapter } from './adapter/chromeAdapter';
 import { createDefaultRegistry } from './commands';
 import { DEFAULT_CONFIG } from './config/schema';
 import { HeaderManager } from './header/headerManager';
+import { BrowserOverlayHost } from './notes/overlayHost';
+import { createXtermModalTerminal } from './notes/xtermModalTerminal';
 import { ShellController } from './shell/controller';
 import {
   CopyOnSelectController,
@@ -85,23 +87,38 @@ function boot(): void {
     copyOnSelect.onSelectionChange();
   });
 
+  let overlayHost!: BrowserOverlayHost;
+
+  const focusActiveSurface = () => {
+    if (overlayHost?.hasActiveOverlay()) {
+      overlayHost.focusActiveOverlay();
+      return;
+    }
+    terminal.focus();
+  };
+
+  overlayHost = new BrowserOverlayHost({
+    createTerminal: createXtermModalTerminal,
+    onRestoreTerminalFocus: () => {
+      terminal.focus();
+    },
+  });
+
   const handleMouseDown = () => {
+    if (overlayHost.hasActiveOverlay()) return;
     copyOnSelect.onMouseDown();
     terminal.focus();
   };
 
   const handleMouseUp = () => {
+    if (overlayHost.hasActiveOverlay()) return;
     copyOnSelect.onMouseUp();
   };
 
-  const focusTerminal = () => {
-    terminal.focus();
-  };
+  const handleHeaderMouseDown = createHeaderMouseDownHandler(focusActiveSurface);
 
-  const handleHeaderMouseDown = createHeaderMouseDownHandler(focusTerminal);
-
-  focusTerminal();
-  window.addEventListener('focus', focusTerminal);
+  focusActiveSurface();
+  window.addEventListener('focus', focusActiveSurface);
   container.addEventListener('mousedown', handleMouseDown);
   headerEl?.addEventListener('mousedown', handleHeaderMouseDown);
   window.addEventListener('mouseup', handleMouseUp);
@@ -111,13 +128,13 @@ function boot(): void {
   window.addEventListener('resize', fit);
 
   const registry = createDefaultRegistry();
-  const controller = new ShellController(terminal, adapter, registry);
+  const controller = new ShellController(terminal, adapter, registry, overlayHost);
   void controller.start();
 
   window.addEventListener('beforeunload', () => {
     resizeObserver.disconnect();
     window.removeEventListener('resize', fit);
-    window.removeEventListener('focus', focusTerminal);
+    window.removeEventListener('focus', focusActiveSurface);
     container.removeEventListener('mousedown', handleMouseDown);
     headerEl?.removeEventListener('mousedown', handleHeaderMouseDown);
     window.removeEventListener('mouseup', handleMouseUp);
