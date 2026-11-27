@@ -7,6 +7,7 @@ import { envCommand, exportCommand, unsetCommand } from './env';
 import { helpCommand } from './help';
 import { lsCommand } from './ls';
 import { manCommand } from './man';
+import { noteCommand } from './note';
 import { openCommand } from './open';
 import { vimCommand } from './vim';
 
@@ -15,6 +16,7 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.register(lsCommand);
   registry.register(cdCommand);
   registry.register(openCommand);
+  registry.register(noteCommand);
   registry.register(vimCommand);
   registry.register(catCommand);
   registry.register(echoCommand);
