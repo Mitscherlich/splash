@@ -5,4 +5,5 @@ dist/
 .ryugi/artifacts/**/.artifact-id
 .ryugi/artifacts/**/.state/
 *.log
+*.zip
 .DS_Store

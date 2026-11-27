@@ -1,0 +1,133 @@
+name: Publish to Chrome Web Store
+
+# Required GitHub repository secrets for publishing:
+#   - CWS_EXTENSION_ID   : Chrome Web Store item ID (32-char extension ID from Developer Dashboard)
+#   - CWS_PUBLISHER_ID   : Chrome Web Store Publisher ID (from Developer Dashboard -> Account)
+#   - CWS_CLIENT_ID      : Google Cloud OAuth2 Client ID (Chrome Web Store API enabled)
+#   - CWS_CLIENT_SECRET  : Google Cloud OAuth2 Client Secret
+#   - CWS_REFRESH_TOKEN  : Google Cloud OAuth2 Refresh Token with chromewebstore scope
+#
+# Release flow:
+#   1. Bump version in both package.json and public/manifest.json
+#   2. Commit & push a tag matching v<version>, e.g.:
+#        git tag v0.1.0 && git push origin v0.1.0
+#   Or trigger manually from GitHub Actions ("Run workflow") with publish=false for a draft upload.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Submit uploaded package for review / publish immediately'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Run build, tests, and packaging without uploading to Chrome Web Store'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify version metadata
+        id: version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          MANIFEST_VERSION=$(node -p "require('./public/manifest.json').version")
+          if [ "$PKG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Version mismatch: package.json ($PKG_VERSION) != public/manifest.json ($MANIFEST_VERSION)"
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Tag version ($TAG_VERSION) != package.json version ($PKG_VERSION)"
+              exit 1
+            fi
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=splash-$PKG_VERSION.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build and pack extension ZIP
+        run: bun run pack
+
+      - name: Upload ZIP build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: splash-${{ steps.version.outputs.version }}
+          path: ${{ steps.version.outputs.zip }}
+
+      - name: Create GitHub Release (on tag push)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.version.outputs.zip }}
+          generate_release_notes: true
+
+      - name: Dry-run summary
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        env:
+          ZIP_FILE: ${{ steps.version.outputs.zip }}
+        run: |
+          echo "Dry-run enabled — skipping Chrome Web Store upload."
+          unzip -l "$ZIP_FILE"
+
+      - name: Validate Chrome Web Store secrets
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          missing=""
+          for name in CWS_EXTENSION_ID CWS_PUBLISHER_ID CWS_CLIENT_ID CWS_CLIENT_SECRET CWS_REFRESH_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required GitHub Secrets:$missing"
+            exit 1
+          fi
+
+      - name: Upload to Chrome Web Store
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        env:
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          ZIP_FILE: ${{ steps.version.outputs.zip }}
+          SHOULD_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+        run: |
+          if [ "$SHOULD_PUBLISH" = "true" ]; then
+            bunx chrome-webstore-upload-cli --source "$ZIP_FILE"
+          else
+            bunx chrome-webstore-upload-cli upload --source "$ZIP_FILE"
+          fi
