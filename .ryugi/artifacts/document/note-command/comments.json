@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "threads": [
+    {
+      "id": "ooqFhgdSEF",
+      "anchor": {
+        "blockId": "aY4UJUVY",
+        "quote": "",
+        "ask": "extra-constraints",
+        "choice": null,
+        "answer": "没问题"
+      },
+      "status": "open",
+      "statusAt": "2026-11-27T07:05:41.654Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "6277x9MDL2",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "没问题",
+          "at": "2026-11-27T07:05:41.654Z"
+        }
+      ]
+    },
+    {
+      "id": "TfcMiP9s5_",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "env-mechanism",
+          "editor-vim-ui",
+          "pipe-scope",
+          "write-semantics",
+          "note-schema",
+          "extra-constraints"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-27T07:06:14.546Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "im_W0jz3g0",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-27T07:06:14.546Z"
+        }
+      ]
+    },
+    {
+      "id": "Qr83gt9iUe",
+      "anchor": {
+        "blockId": "3etTJrM1",
+        "quote": "",
+        "ask": "approve",
+        "choice": "approve",
+        "answer": null
+      },
+      "status": "open",
+      "statusAt": "2026-11-27T07:17:32.179Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "wcloJ7nLpL",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "approve",
+          "at": "2026-11-27T07:17:32.179Z"
+        }
+      ]
+    },
+    {
+      "id": "1tp1tjzf9R",
+      "anchor": {
+        "blockId": "*",
+        "quote": "",
+        "submit": true,
+        "asks": [
+          "approve"
+        ]
+      },
+      "status": "open",
+      "statusAt": "2026-11-27T07:17:32.207Z",
+      "statusBy": "human",
+      "messages": [
+        {
+          "id": "WLlnGd3Oab",
+          "author": "human",
+          "name": "Mitscherlich",
+          "avatar": "/api/avatar/gravatar/f0daad5950985b0d77b3b2bb5477cb7dff44a8a87b86e236064eaaf31267e08c",
+          "text": "Submitted the answers",
+          "at": "2026-11-27T07:17:32.207Z"
+        }
+      ]
+    },
+    {
+      "id": "PO4bby10is",
+      "anchor": {
+        "blockId": "3etTJrM1",
+        "quote": "",
+        "ask": "approve",
+        "note": true
+      },
+      "status": "open",
+      "statusAt": "2026-11-27T07:18:27.228Z",
+      "statusBy": "agent",
+      "messages": [
+        {
+          "id": "OOu3nXe4mJ",
+          "author": "agent",
+          "name": "Antigravity",
+          "text": "Design approved on 2026-11-27; wrote spec pointer docs/ryugi/specs/2026-11-27-note-command-design.md and committing design files.",
+          "at": "2026-11-27T07:18:27.228Z"
+        }
+      ]
+    }
+  ]
+}

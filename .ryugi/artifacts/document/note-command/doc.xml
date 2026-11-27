@@ -1,0 +1,347 @@
+<doc ryugi-attribution="eyJjcmVhdGVkQnkiOiJBbnRpZ3Jhdml0eSIsImRpZ2VzdCI6ImYyOGIwMDMwZjU2MjAzZGNjNTdlZDlhOGU4MTZhZjFhNGU0YTJiZWVhYTExMTI1Yzg4ZTBiZjY1ZjVmZTU5ZjkifQ">
+  <h1 id="R4AkGRA8">Splash <code>note</code> 命令与字符画拟物浮层备忘录设计文档</h1>
+  <p id="X-N0EaSB">本文档为 Splash 新增 <code>note</code> 复杂命令及其配套 Shell 管道、环境变量与字符画拟物浮层（<code>note --gui</code> 与 <code>EDITOR=vim note &lt;id&gt;</code>）的完整工程设计，供实现阶段直接按此施工。</p>
+  <h2 id="DpFz-0tH">1. 意图与背景</h2>
+  <p id="vk1e15A-">Splash 是一个基于 <code>@xterm/xterm</code>、TypeScript、Vite 与 <code>ascii.rest</code> 构建的极简 Chrome 新标签页终端扩展，目前支持标签页管理（<code>ls</code> / <code>cd</code>）、历史自动补全打开（<code>open</code>）、页头 ASCII 动画以及终端内模态配置编辑器（<code>vim /etc/splash.d/config</code>）。</p>
+  <p id="3BWkuBS4">新增 <code>note</code> 命令的目的是将 Splash 扩展为<b>键盘优先的本地随手记工作台</b>：日常在命令行里一行快速记录、列出、删除，或借助管道（<code>echo &lt;content&gt; | note &lt;id&gt;</code>）直接写入；需要编辑多行长文或总览整理全部备忘时，可通过 <code>EDITOR=vim note &lt;id&gt;</code> 或 <code>note --gui</code> 切入字符画拟物浮层与 Vim 编辑器。所有数据继续 100% 存储在浏览器本地（<code>chrome.storage.local</code>）并跨 Splash 新标签页实时同步，不引入后端服务或新增浏览器权限。</p>
+  <h2 id="UMmwmuDe">2. 目标、非目标与反目标</h2>
+  <h3 id="4bTLeSiI">目标（Goals）</h3>
+  <ul id="YkQJ4je5">
+    <li>新增内置命令 <code>note</code>，完整覆盖 <code>note new &lt;content&gt;</code>、<code>note ls</code>、<code>note rm &lt;id&gt;</code>、<code>note &lt;id&gt; [...content]</code> 与 <code>note --gui</code>。</li>
+    <li>在 Shell 层实现通用多段管道（<code>cmd1 | cmd2 | ...</code>），新增内置 <code>echo</code>，并让 <code>cat</code> 支持无参读取 <code>stdin</code>，自然打通 <code>echo &lt;content&gt; | note &lt;id&gt;</code>、<code>echo &lt;content&gt; | note new</code>、<code>note &lt;id&gt; | cat</code> 等组合。</li>
+    <li>在 Shell 层实现三层环境变量机制：行内前缀（<code>EDITOR=vim note 1</code>）、会话命令（<code>export</code> / <code>unset</code> / <code>env</code>）以及 <code>/etc/splash.d/config</code> 持久化默认值（<code>env.EDITOR</code>）。</li>
+    <li>当有效环境变量 <code>EDITOR=vim</code> 时，无内容参数且无管道的 <code>note &lt;id&gt;</code> 打开独立的字符画拟物浮层 Vim 编辑窗口，复用 Splash 现有 <code>VimSession</code> 能力。</li>
+    <li><code>note --gui</code> 打开「字符软木板便签墙」风格浮层，展示全部备忘并支持新增、删除与 Vim 修改，兼顾键盘导航与鼠标点击，并支持多标签页实时同步。</li>
+    <li>补齐 <code>help</code>、<code>man</code> 及子命令 / 备忘 ID 的 Tab 自动补全，以及完整的 Vitest 单测与集成测试。</li>
+  </ul>
+  <h3 id="XZEmGoEb">非目标（Non-Goals）</h3>
+  <ul id="8hfhPQfd">
+    <li>不做完整 POSIX Shell 语法：首版不支持 <code>&amp;&amp;</code> / <code>||</code> / <code>;</code>、变量展开（<code>$VAR</code>）、命令替换（<code>$(...)</code>）、重定向（<code>&gt;</code> / <code>&gt;&gt;</code>）、通配符或后台任务。</li>
+    <li>不做云端同步、<code>chrome.storage.sync</code> 分片、富文本 / Markdown 渲染、标签文件夹分类、全文索引或图片附件。</li>
+    <li>不内置除 <code>vim</code> 以外的其他编辑器（遇到不支持的非空 <code>EDITOR</code> 值明确报错）。</li>
+  </ul>
+  <h3 id="6Eqh8cLD">反目标（Anti-Goals）</h3>
+  <ul id="0WosHkAZ">
+    <li>避免现代 SaaS 卡片 / 亮色圆角弹窗破坏 Splash 的暗色等宽 ASCII 终端气质。</li>
+    <li>避免破坏既有命令（<code>ls</code> / <code>cd</code> / <code>open</code> / <code>vim /etc/splash.d/config</code> / <code>cat</code>），或把 ANSI 颜色控制码泄漏进管道 <code>stdin</code>。</li>
+    <li>避免任何浮层关闭后终端失焦，或浮层打开期间按键穿透到底层终端。</li>
+  </ul>
+  <h2 id="hqUIaxGZ">3. 约束与边界条件</h2>
+  <ul id="Wevc2AWa">
+    <li><b>浏览器扩展权限不变：</b>仅复用现有 <code>storage</code> 权限，不改动 <code>manifest.json</code> 权限声明。</li>
+    <li><b>零外部运行依赖：</b>所有渲染均基于现有 <code>@xterm/xterm</code>、<code>@xterm/addon-fit</code> 与原生 DOM / CSS，不引入 React/Vue 或外部字体/图标 CDN。</li>
+    <li><b>CJK / 宽字符与安全转义：</b>复用 <code>src/shell/width.ts</code>（<code>sanitizeTerminalText</code>、<code>truncateToWidth</code>、<code>stringDisplayWidth</code>）处理终端列表截断与 Vim 光标列宽；DOM 浮层渲染备忘内容必须使用 <code>textContent</code>（禁止将用户输入拼接为 <code>innerHTML</code>），杜绝 XSS。</li>
+    <li><b>多标签页并发与冲突契约（我的决定）：</b><code>NoteGuiOverlay</code> 列表通过 <code>storage.onChanged</code> 实时刷新；但已打开的 <code>NoteVimModal</code> 无论是否已修改，均<b>不静默热重载或覆盖</b>当前编辑器缓冲区，仅在顶栏给出轻量远端变更提示。执行保存（<code>:w</code> / <code>:wq</code> / <code>:x</code> / <code>ZZ</code>）时统一采用「读取最新 <code>NotesState</code> 快照 → 合并写入」：若目标 <code>#id</code> 仍存在，则覆盖该条内容并刷新 <code>updatedAt</code>（last-write-wins，不覆盖其他标签页对无关备忘的修改）；若目标 <code>#id</code> 已在其他标签页被删除，<b>绝不复活或复用旧 ID</b>，而是分配新的 <code>nextId</code> 存为新备忘、同步更新弹窗标题与 Vim 状态栏路径为 <code>note://&lt;newId&gt;</code>，并在消息栏提示 <code>note #&lt;oldId&gt; was removed in another tab; saved as note #&lt;newId&gt;</code>。</li>
+  </ul>
+  <h2 id="KuIwq7yt">4. 已确认的核心设计决策</h2>
+  <p id="rFXkIsiX">以下决策由用户原始需求、Round 1 设计文档确认及视觉画板确认共同锁定，另标注了我补充的合理默认决定：</p>
+  <ul id="h_DQ4xQ4">
+    <li><b>子命令集合：</b><code>note new &lt;content&gt;</code>、<code>note ls</code>、<code>note rm &lt;id&gt;</code>、<code>note &lt;id&gt; [...content]</code>、<code>note --gui</code>（你的要求）。</li>
+    <li><b>管道写入等价语义：</b><code>echo &lt;content&gt; | note &lt;id&gt;</code> 等价于 <code>note &lt;id&gt; &lt;...content&gt;</code>（你的要求）。</li>
+    <li><b>环境变量三层机制：</b>行内前缀（<code>EDITOR=vim note 1</code>）&gt; 会话命令（<code>export</code> / <code>unset</code> / <code>env</code>）&gt; <code>/etc/splash.d/config</code> 持久化默认值（<code>env.EDITOR</code>，默认空）（你的确认，按推荐采纳）。</li>
+    <li><b><code>EDITOR=vim</code> 图形编辑界面：</b>独立字符画拟物浮层 Vim 窗口，仅打开该条备忘，<code>:wq</code> / <code>:q</code> 后关闭浮层回到终端，与 <code>note --gui</code> 复用同一套浮层 Vim 编辑器组件（你的确认，按推荐采纳）。</li>
+    <li><b>Shell 管道与 <code>echo</code> 范围：</b>实现通用多段管道（传递纯文本 <code>stdin</code> / <code>stdout</code>）并新增内置 <code>echo</code>，支持 <code>echo | note</code>、<code>cat | note new</code>、<code>note 1 | cat</code> 等组合（你的确认，按推荐采纳）。</li>
+    <li><b>写入覆盖语义与管道纯文本保护：</b><code>note &lt;id&gt; [...content]</code> 与管道写入均默认<b>覆盖</b>该条备忘全文；无参数无管道时读取；处于管道上游（如 <code>note 1 | cat</code>）或行内清空（<code>EDITOR= note 1</code>）时强制纯文本输出，不弹出编辑器（你的确认，按推荐采纳）。</li>
+    <li><b>备忘 ID 与内容模型：</b>单调自增正整数 ID（<code>1, 2, 3…</code>，删除不复用，不与 <code>new</code> / <code>ls</code> / <code>rm</code> 冲突）+ 纯多行文本（首行自动作为列表与卡片摘要）+ <code>createdAt</code> / <code>updatedAt</code>（你的确认，按推荐采纳）。</li>
+    <li><b><code>note --gui</code> 视觉方向：</b>采用 <b>A · 字符软木板便签墙</b>（<ref artboard="note-gui" to="xAXJOugreTp5rVVePAdKg" board="q1-corkboard" />），保留图钉、折角、<code>░</code> 字符投影与居中内嵌 ASCII Vim 弹窗（你的确认，按推荐采纳）。</li>
+    <li><b>数据持久化：</b>复用 <code>BrowserAdapter</code> + <code>chrome.storage.local</code>（key 为 <code>splash.notes</code>）并接入 <code>storage.onChanged</code> 跨标签页同步（我的决定）。</li>
+    <li><b>辅助体验：</b>补齐 <code>help</code> / <code>man</code> 与 Tab 补全；GUI 删除提供底部行内二次确认条防误删；<code>note new</code> 无参无管道且 <code>EDITOR=vim</code> 时可直接打开浮层 Vim 撰写新备忘（我的决定）。</li>
+  </ul>
+  <h2 id="vfusv-i_">5. 架构与模块规格</h2>
+  <mermaid id="x_m8AogJ">flowchart LR
+  input[&quot;Terminal Input&quot;] --&gt; parser[&quot;Pipeline &amp; Env Parser&quot;]
+  parser --&gt; ctrl[&quot;ShellController (Pipeline Runner + Env Store)&quot;]
+  ctrl --&gt; cmds[&quot;Commands: note / echo / export / unset / env / cat ...&quot;]
+  cmds --&gt; adapter[&quot;BrowserAdapter (chrome.storage.local)&quot;]
+  cmds --&gt; gui[&quot;NoteGuiOverlay (Corkboard)&quot;]
+  cmds --&gt; modal[&quot;NoteVimModal (Embedded xterm + VimSession)&quot;]
+  gui --&gt; modal
+  adapter -. &quot;storage.onChanged&quot; .-&gt; ctrl
+  adapter -. &quot;storage.onChanged&quot; .-&gt; gui</mermaid>
+  <h3 id="My38t_Xz">5.1 Shell 解析与管道执行（<code>src/shell/parser.ts</code>、<code>controller.ts</code>、<code>registry.ts</code>）</h3>
+  <ol id="OHhOh_fl">
+    <li><b>管道分词：</b>新增 <code>parsePipeline(input: string)</code>，按未加引号的 <code>|</code> 切分为 1..N 个 <code>ParsedStage</code>。首尾出现 <code>|</code> 或连续 <code>||</code> 返回语法错误 <code>syntax error near unexpected token &apos;|&apos;</code>；单引号或双引号内的 <code>|</code> 按普通字符保留。保留现有 <code>parseCommandLine</code> 兼容单段调用或作为薄包装。</li>
+    <li><b>行内环境变量前缀：</b>每个 stage 开头连续满足 <code>^[A-Za-z_][A-Za-z0-9_]*=</code>（等号左侧未加引号）的 token 解析为 <code>stage.env: Record&lt;string, string&gt;</code>（允许空值如 <code>EDITOR=</code>），其余为 <code>command</code> 与 <code>args</code>。若单段仅有赋值而无命令名（如用户输入 <code>EDITOR=vim</code>），我的决定：直接写入当前会话环境变量（等同 <code>export EDITOR=vim</code>），避免用户困惑；若多段管道中存在无命令名的纯赋值段则报语法错误。</li>
+    <li><b>Tab 补全适配：</b><code>parseCompletionContext</code> 在光标位于未加引号的 <code>|</code> 之后时，仅对当前最后一个 stage 计算补全上下文，并跳过该 stage 开头已完成的 <code>KEY=VALUE</code> 赋值 token，保证 <code>EDITOR=vim note &lt;Tab&gt;</code> 与 <code>echo hi | note &lt;Tab&gt;</code> 均能正确触发 <code>note</code> 补全。</li>
+    <li>
+      <b><code>CommandContext</code> 扩展：</b>
+      <ul>
+        <li><code>stdin?: string</code>：存在上游管道时传入其纯文本输出（<code>\r\n</code> 统一归一为 <code>\n</code>），首段为 <code>undefined</code>。</li>
+        <li><code>isPipedOut: boolean</code>：当存在下游管道时为 <code>true</code>。</li>
+        <li><code>env: Readonly&lt;Record&lt;string, string&gt;&gt;</code>：当前 stage 合并后的有效环境变量。</li>
+        <li><code>writeError(text: string): void</code>（或由异常/返回值标记失败）：错误输出始终直写终端错误样式，<b>绝不</b>混入管道 <code>stdout</code>；任一 stage 抛出异常或调用失败标记后，立即中止后续管道 stage（例如 <code>cat /bad | note 1</code> 不会清空或污染 note #1）。</li>
+        <li><code>envStore</code>（或控制器方法）：供 <code>export</code> / <code>unset</code> / <code>env</code> 读写会话级环境变量覆盖表。</li>
+        <li><code>ui?: ShellOverlayHost</code>（可选，浏览器端由 <code>main.ts</code> 注入，测试环境可 mock）：提供打开 <code>note --gui</code> 浮层与独立 <code>NoteVimModal</code> 的能力。</li>
+      </ul>
+    </li>
+    <li><b>管道输出捕获：</b>当 <code>isPipedOut === true</code> 时，控制器拦截 <code>write</code> / <code>writeln</code> 至内存缓冲并经 <code>ansi.strip</code> 去除 ANSI 样式与 OSC-8 链接后传给下一段 <code>stdin</code>。最后一段直接写入终端。</li>
+  </ol>
+  <h3 id="ucZTi7Um">5.2 环境变量与配置文件扩展（<code>src/config/schema.ts</code>）</h3>
+  <ul id="jYrKVXIO">
+    <li><b>配置 Schema：</b>在 <code>SplashConfig</code> 新增 <code>env: { EDITOR: string }</code>（默认 <code>{ EDITOR: &apos;&apos; }</code>）。<code>serializeConfig</code> 追加注释与 <code>env.EDITOR = ...</code>（为空时输出 <code>env.EDITOR =</code>）；<code>parseConfigText</code> 识别 <code>env.EDITOR</code>（允许空字符串或 <code>vim</code>，若为其他未知值可保留字符串或校验，我的决定：允许任意非控制字符短字符串以便通用环境变量扩展，真正使用时由 <code>note</code> 校验是否支持 <code>vim</code>）。<code>normalizeConfig</code> 向后兼容旧版不含 <code>env</code> 字段的本地存储。</li>
+    <li><b>优先级与热更新：</b>有效环境变量按 <code>config.env</code> &lt; <code>sessionEnv</code>（支持记录显式 <code>unset</code> 墓碑值以屏蔽 config 默认值）&lt; <code>stageInlineEnv</code> 合并。<code>ShellController</code> 启动时加载配置并订阅 <code>adapter.onConfigChanged</code> 同步刷新 <code>config.env</code>。</li>
+    <li>
+      <b>新增内置命令：</b>
+      <table>
+        <tr>
+          <th>
+            <p>命令</p>
+          </th>
+          <th>
+            <p>用法</p>
+          </th>
+          <th>
+            <p>行为</p>
+          </th>
+        </tr>
+        <tr>
+          <td>
+            <p><code>echo</code></p>
+          </td>
+          <td>
+            <p><code>echo [-n] [...text]</code></p>
+          </td>
+          <td>
+            <p>以单空格拼接参数输出并换行；<code>-n</code> 省略末尾换行。</p>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <p><code>export</code></p>
+          </td>
+          <td>
+            <p><code>export [KEY=VALUE ...]</code></p>
+          </td>
+          <td>
+            <p>无参列出当前所有非空有效环境变量（按 key 排序，<code>KEY=VALUE</code>）；有参设置会话级环境变量（校验 key 合法性 <code>^[A-Za-z_][A-Za-z0-9_]*$</code>）。</p>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <p><code>unset</code></p>
+          </td>
+          <td>
+            <p><code>unset &lt;KEY...&gt;</code></p>
+          </td>
+          <td>
+            <p>在当前会话移除指定变量（对来自 config 的变量写入会话屏蔽标记）。</p>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <p><code>env</code></p>
+          </td>
+          <td>
+            <p><code>env</code></p>
+          </td>
+          <td>
+            <p>按 key 排序输出当前所有非空有效环境变量（<code>KEY=VALUE</code>）。</p>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <p><code>cat</code>（增强）</p>
+          </td>
+          <td>
+            <p><code>cat [/etc/splash.d/config]</code></p>
+          </td>
+          <td>
+            <p>保持原有读配置行为；无参且 <code>ctx.stdin !== undefined</code> 时原样输出 <code>ctx.stdin</code>（支持 <code>note 1 | cat</code>）。</p>
+          </td>
+        </tr>
+      </table>
+    </li>
+  </ul>
+  <h3 id="lsKmcplF">5.3 备忘数据结构与本地存储（<code>src/notes/types.ts</code>、<code>BrowserAdapter</code>）</h3>
+  <codeblock id="KMoistFl" lang="ts">export interface NoteItem {
+  id: number;        // 单调自增正整数：1, 2, 3...
+  content: string;   // 纯多行文本（统一 \n 换行）
+  createdAt: number; // 创建时间戳 (ms)
+  updatedAt: number; // 最后更新时间戳 (ms)
+}
+
+export interface NotesState {
+  nextId: number;    // 初始为 1，恒 &gt;= (max(items.id) + 1)，删除不复用
+  items: NoteItem[];
+}</codeblock>
+  <ul id="KARfvClB">
+    <li><b>存储键与适配器接口：</b>在 <code>ChromeBrowserAdapter</code> 中新增 <code>NOTES_STORAGE_KEY = &apos;splash.notes&apos;</code>，为 <code>BrowserAdapter</code> 增加 <code>loadNotes()</code>、<code>saveNotes(state)</code>、<code>onNotesChanged(listener)</code>，并同步更新测试用 <code>FakeBrowserAdapter</code>。</li>
+    <li><b>归一化保护：</b><code>normalizeNotesState(raw)</code> 过滤非法项，将换行符统一为 <code>\n</code>，并保证 <code>nextId = Math.max(1, validNextId, maxId + 1)</code>。</li>
+  </ul>
+  <h3 id="bwW_g9Js">5.4 <code>note</code> 命令完整语义矩阵（<code>src/commands/note.ts</code>）</h3>
+  <table id="AlgpmmIX">
+    <tr>
+      <th>
+        <p>调用形式</p>
+      </th>
+      <th>
+        <p>条件</p>
+      </th>
+      <th>
+        <p>行为与输出</p>
+      </th>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note</code></p>
+      </td>
+      <td>
+        <p>无参数、无 <code>stdin</code></p>
+      </td>
+      <td>
+        <p>输出简洁用法提示（<code>usage: note ...</code>）。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note --gui</code></p>
+      </td>
+      <td>
+        <p>允许 <code>--gui</code>（及简写 <code>-g</code>，我的决定）</p>
+      </td>
+      <td>
+        <p>若 <code>isPipedOut</code> 报错退出；否则打开字符软木板浮层并等待关闭后返回终端提示符。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note new &lt;...content&gt;</code></p>
+      </td>
+      <td>
+        <p>有位置参数</p>
+      </td>
+      <td>
+        <p>以单空格拼接参数为正文，分配 <code>nextId</code> 保存，输出 <code>created note #&lt;id&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>echo &lt;content&gt; | note new</code></p>
+      </td>
+      <td>
+        <p>无位置参数、有 <code>stdin</code></p>
+      </td>
+      <td>
+        <p>剥离 <code>stdin</code> 末尾至多一个换行（<code>\r?\n$</code>）作为正文创建新备忘，输出 <code>created note #&lt;id&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note new</code></p>
+      </td>
+      <td>
+        <p>无参数、无 <code>stdin</code></p>
+      </td>
+      <td>
+        <p>我的决定：若非管道且 <code>EDITOR=vim</code>，打开独立浮层 Vim 撰写新备忘（保存时分配新 ID，未保存直接 <code>:q</code> 不创建）；否则输出 <code>usage: note new &lt;content&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note ls</code></p>
+      </td>
+      <td>
+        <p>无额外参数</p>
+      </td>
+      <td>
+        <p>按 <code>id</code> 升序输出全部备忘：<code>#&lt;id&gt;  &lt;首行摘要&gt;  &lt;时间&gt;</code>（按终端列宽截断；空列表交互模式输出暗色 <code>(no notes)</code>，管道模式下输出空内容）。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note rm &lt;id...&gt;</code></p>
+      </td>
+      <td>
+        <p>一个或多个正整数 ID</p>
+      </td>
+      <td>
+        <p>校验存在性（任一 ID 非法或不存在则报错，不部分静默失败）；删除对应条目，不回退 <code>nextId</code>，输出 <code>removed note #&lt;id&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note &lt;id&gt; &lt;...content&gt;</code></p>
+      </td>
+      <td>
+        <p>有位置参数（含同时有 <code>stdin</code> 时，参数优先，我的决定）</p>
+      </td>
+      <td>
+        <p>查找指定 ID（不存在则报错，不自动创建）；以单空格拼接参数<b>覆盖</b> <code>content</code> 并刷新 <code>updatedAt</code>，输出 <code>updated note #&lt;id&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>echo &lt;content&gt; | note &lt;id&gt;</code></p>
+      </td>
+      <td>
+        <p>无位置参数、有 <code>stdin</code></p>
+      </td>
+      <td>
+        <p>查找指定 ID；剥离 <code>stdin</code> 末尾至多一个换行后<b>覆盖</b> <code>content</code>（保留内部多行换行），输出 <code>updated note #&lt;id&gt;</code>。</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <p><code>note &lt;id&gt;</code></p>
+      </td>
+      <td>
+        <p>无位置参数、无 <code>stdin</code></p>
+      </td>
+      <td>
+        <p>查找指定 ID；若 <code>isPipedOut === true</code> 强制输出纯文本 <code>content</code>；否则检查 <code>env.EDITOR</code>：为空则输出 <code>content</code>；为 <code>vim</code> 则打开独立浮层 Vim 窗口编辑该条备忘；为其他值则报错 <code>note: unsupported EDITOR &quot;...&quot; (supported: vim)</code>。</p>
+      </td>
+    </tr>
+  </table>
+  <p id="1XX8_xr2"><b>Tab 补全规则：</b>输入 <code>note &lt;Tab&gt;</code> 时补全子命令（<code>new</code>、<code>ls</code>、<code>rm</code>、<code>--gui</code>）及现有备忘 ID（附首行摘要作为 label）；输入 <code>note rm &lt;Tab&gt;</code> 时补全现有备忘 ID（附首行摘要）。</p>
+  <h2 id="yahzdnrf">6. 视觉方向与浮层交互规格（<code>note --gui</code> 与 <code>EDITOR=vim note &lt;id&gt;</code>）</h2>
+  <h3 id="FsPbPtcv">6.1 选定视觉方向（来自 <code>artboard/note-gui</code>）</h3>
+  <p id="Ji6W4PcO">在配套画板中最终选定 <b>A · 字符软木板便签墙</b>：<ref artboard="note-gui" to="xAXJOugreTp5rVVePAdKg" board="q1-corkboard" />。为确保脱离画板文件也能忠实还原设计意图，完整视觉语言记录如下：</p>
+  <ul id="NLqUcK9I">
+    <li><b>Product（产品场景）：</b>键盘优先的 Splash 新标签页用户，在命令行随手记与可视化总览/Vim 深度编辑之间瞬时切换。</li>
+    <li><b>Character（气质）：</b>触感字符画手作感（Tactile ASCII-craft）、键盘原生、克制精准的桌面工具感。</li>
+    <li><b>World（视觉世界与 Token）：</b>完全继承 Splash 暗色终端色板与等宽字体（<code>#0f1117</code> 背景、<code>#141821</code> 浮层板面、<code>#161b25</code> 便签纸面、<code>#e6edf3</code> 主字、<code>#9aa4b2</code> 副文、<code>#6e7681</code> 弱提示、<code>#58a6ff</code> / <code>#79c0ff</code> 选中高亮、<code>#d29922</code> / <code>#e3b341</code> 软木与图钉暖琥珀、<code>#3fb950</code> 绿、<code>#f85149</code> 删除红、<code>#bc8cff</code> 紫；字体 <code>JetBrains Mono / SF Mono / Cascadia Code / Menlo / Consolas</code>）。浮层以 <code>position: fixed</code> 叠加于虚化暗罩（<code>backdrop-filter: blur(3px)</code>）之上，板面使用微弱点阵呈现软木质感。</li>
+    <li><b>Moments（视觉焦点）：</b>（1）多列网格排布的字符画便签卡片——顶部居中 ASCII 图钉 <code>(o)</code>（按 ID 循环琥珀/青/绿/紫四色）、虚线头栏（<code>#id</code> 与时间）、首行标题加粗、最多 3 行预览、右下角纸页折角 <code>_╱</code> 与 <code>░</code> 字符半色调投影（选中态切换为 <code>#58a6ff</code> 边框与青色投影并轻微微抬）；（2）居中弹出的字符框 Vim 编辑器窗口（<code>┌─ VIM · note #&lt;id&gt; ─┐</code>），带真实行号、反白状态栏与命令栏。</li>
+    <li><b>Signature（标志细节）：</b>顶部 <code>╔═[ PINBOARD ]═╗</code> 徽标 + 便签 <code>(o)</code> 图钉 / <code>_╱</code> 折角 / <code>░</code> 投影语法 + 底部 Vim 风格快捷键提示条。</li>
+  </ul>
+  <h3 id="5vvSApHm">6.2 浮层 Vim 编辑器复用方案（<code>NoteVimModal</code>）</h3>
+  <p id="tdwjBoEb">浮层内的 Vim 编辑器<b>不重写第二套 Vim 逻辑</b>，而是复用经过验证的 <code>src/shell/vimSession.ts</code>：</p>
+  <ul id="6PnPAhi8">
+    <li>为 <code>VimSessionOptions</code> 增加可选字段 <code>useAltScreen?: boolean</code>（默认 <code>true</code> 保持终端内 <code>vim /etc/splash.d/config</code> 不变；浮层内传入 <code>false</code>，直接在独立容器内渲染清屏即可），并增加 <code>setFilePath(path: string)</code> 方法供新建首次保存或跨标签页另存新 ID 时同步刷新状态栏文件名。</li>
+    <li><b>长行水平滚动（我的决定）：</b>为 <code>VimSession</code> 增加按显示列宽计算的水平滚动（<code>scrollLeft</code>，保持 1 逻辑行 = 1 屏幕行，首版不做软换行），在光标超出可见列宽时自动横向视窗跟随并按宽字符边界安全切片渲染；<code>NoteVimModal</code> 视口宽设为 <code>min(860px, 90vw)</code>，避免较长中英文行在居中浮层中截断盲打。</li>
+    <li><code>NoteVimModal</code> 在 DOM 居中窗口（<code>┌─ VIM · note #&lt;id&gt; ─┐</code>）内挂载一个轻量级 <code>@xterm/xterm</code> + <code>FitAddon</code> 实例（复用 <code>DEFAULT_THEME</code> 与等宽字体），将其包装为 <code>SessionIO</code> 驱动 <code>VimSession</code>。</li>
+    <li>支持 <code>VimSession</code> 全部既有操作：<code>h/j/k/l</code> 与方向键、<code>0/$</code>、<code>gg/G</code>、<code>i/a/I/A/o/O</code>、<code>x</code>、<code>dd</code>、<code>u</code>、<code>ZZ</code>、<code>ZQ</code>、<code>:w</code>、<code>:q</code>、<code>:q!</code>、<code>:wq</code>、<code>:x</code>，并在窗口顶栏提供便捷按钮（如 <code>:wq 保存并关闭</code>）兼顾鼠标用户。</li>
+    <li><code>EDITOR=vim note &lt;id&gt;</code> 与 <code>note --gui</code> 内部的新增/编辑共用同一个 <code>NoteVimModal</code> 组件：前者直接挂载在暗罩之上，退出即回到主终端；后者叠在软木板之上，退出回到软木板并保持焦点与选中态。</li>
+  </ul>
+  <h3 id="7KKnyb5Q">6.3 软木板（<code>NoteGuiOverlay</code>）交互流</h3>
+  <mermaid id="RevRtBSJ">stateDiagram-v2
+  [*] --&gt; Corkboard: note --gui
+  Corkboard --&gt; VimEdit: e / Enter / 双击卡片
+  Corkboard --&gt; VimNew: n / 点击 [+ 新建]
+  Corkboard --&gt; DeleteConfirm: d / 点击 [删除]
+  VimEdit --&gt; Corkboard: :wq / :q / :q! / ZZ / ZQ
+  VimNew --&gt; Corkboard: :wq (创建并选中) / :q! (放弃)
+  DeleteConfirm --&gt; Corkboard: y (删除并更新选中) / n / Esc (取消)
+  Corkboard --&gt; [*]: q / Esc / 点击外部暗罩 (焦点归还主终端)</mermaid>
+  <ul id="KoScSoPY">
+    <li><b>网格键盘导航：</b><code>h/j/k/l</code> 与方向键按当前列数（宽屏 3 列，窄屏自适应 2 列 / 1 列）在便签卡之间移动选中并自动滚动至可视区域。</li>
+    <li><b>新增（<code>n</code> / 按钮）：</b>打开 <code>NoteVimModal</code>（标题 <code>note #new</code>），首次保存（<code>:w</code> / <code>:wq</code> / <code>:x</code> / <code>ZZ</code>）时写入新备忘并刷新卡片列表，未保存退出不产生空记录。</li>
+    <li><b>编辑（<code>e</code> / <code>Enter</code> / 双击 / 按钮）：</b>打开 <code>NoteVimModal</code> 编辑当前选中备忘，保存即持久化。</li>
+    <li><b>删除（<code>d</code> / 按钮）：</b>在浮层底栏切换为行内确认条（<code>确认删除 note #&lt;id&gt;？ [y] 确认  [n/Esc] 取消</code>），按 <code>y</code> / 点击确认后删除并选中相邻卡片；按 <code>n</code> / <code>Esc</code> 取消。</li>
+    <li><b>空状态：</b>无任何备忘时在软木板中央展示字符画空态框（提示按 <code>[n]</code> 钉上第一张便签），并允许点击新建。</li>
+    <li><b>焦点隔离与恢复（关键实现点）：</b><code>main.ts</code> 中的 <code>window.addEventListener(&apos;focus&apos;, focusTerminal)</code> 与背景终端鼠标事件需感知浮层栈状态——浮层打开时焦点锁定在浮层（或内嵌 Vim 的 xterm），严禁键盘事件穿透到底层主终端；浮层完全卸载后调用 <code>terminal.focus()</code> 恢复终端输入。</li>
+  </ul>
+  <h2 id="E42d5u0m">7. 关联产出物索引</h2>
+  <ul id="x7hLzpaL">
+    <li><b>设计文档：</b><code>document/note-command</code>（路径 <code>.ryugi/artifacts/document/note-command/doc.xml</code>）——记录 Round 1 全部行为、架构、管道与环境变量决策及本完整设计。</li>
+    <li><b>视觉画板：</b><code>artboard/note-gui</code>（路径 <code>.ryugi/artifacts/artboard/note-gui/canvas.json</code>）——Round 1 对比了 3 套字符画拟物方案（<code>q1-corkboard</code> 软木板便签墙、<code>q1-index-tray</code> 索引卡盒、<code>q1-notebook</code> 活页记事本），最终选定 <code>q1-corkboard</code>（<ref artboard="note-gui" to="xAXJOugreTp5rVVePAdKg" board="q1-corkboard" />）。</li>
+  </ul>
+  <h2 id="3GD-4F_h">8. 留给实现者的空间</h2>
+  <ul id="_1vSUljK">
+    <li><code>src/notes/</code> 与 <code>src/shell/</code> 下的具体文件拆分与内部类型命名。</li>
+    <li>软木板在窄视口下的响应式列宽断点、卡片滚动条样式细节，以及时间戳相对格式（如「今天 HH:mm」/「MM-DD HH:mm」）的具体实现。</li>
+    <li><code>help</code> 与 <code>man</code> 页面（<code>note</code>、<code>echo</code>、<code>export</code>、<code>unset</code>、<code>env</code>）的具体文案排版与示例挑选。</li>
+    <li><code>NoteVimModal</code> 顶部快捷按钮细节与测试桩（mock <code>ShellOverlayHost</code> / <code>FakeBrowserAdapter</code>）的组织方式。</li>
+  </ul>
+  <p id="3etTJrM1">请审阅以上完整设计文档并做出审批选择，然后点击页面底部 <b>Submit</b>：<ask id="approve"><option value="approve">批准设计，按此方案推进实现</option><option value="revise">需要调整（请配合评论指出修改点）</option></ask></p>
+</doc>
+
