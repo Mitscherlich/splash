@@ -23,11 +23,21 @@ describe('SplashConfig schema serialize/parse', () => {
         mono: true,
         divider: false,
       },
+      env: {
+        EDITOR: 'vim',
+      },
     };
     const serialized = serializeConfig(custom);
     expect(serialized).toContain('header.piece = night-coast');
     expect(serialized).toContain('header.mono = true');
+    expect(serialized).toContain('env.EDITOR = vim');
     expect(parseConfigText(serialized)).toEqual({ ok: true, config: custom });
+
+    // Empty env.EDITOR = parses back to empty string
+    expect(parseConfigText('env.EDITOR = \n')).toEqual({
+      ok: true,
+      config: DEFAULT_CONFIG,
+    });
   });
 
   it('ignores comments and blank lines and fills omitted keys from DEFAULT_CONFIG', () => {
@@ -45,6 +55,7 @@ header.density = standard
           piece: 'donut',
           density: 'standard',
         },
+        env: { ...DEFAULT_CONFIG.env },
       },
     });
   });
@@ -102,6 +113,9 @@ header.density = standard
         density: 'compact',
         mono: false,
         divider: false,
+      },
+      env: {
+        EDITOR: '',
       },
     });
   });

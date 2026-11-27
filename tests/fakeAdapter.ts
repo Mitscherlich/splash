@@ -5,6 +5,11 @@ import type {
   TabInfo,
 } from '../src/adapter/types';
 import { DEFAULT_CONFIG, normalizeConfig, type SplashConfig } from '../src/config/schema';
+import {
+  EMPTY_NOTES_STATE,
+  normalizeNotesState,
+  type NotesState,
+} from '../src/notes/types';
 
 export class FakeBrowserAdapter implements BrowserAdapter {
   tabs: TabInfo[];
@@ -13,11 +18,13 @@ export class FakeBrowserAdapter implements BrowserAdapter {
   history: string[];
   visitedUrls: HistoryVisit[];
   config: SplashConfig;
+  notes: NotesState;
   openedUrls: string[] = [];
   searches: string[] = [];
   activatedTabIds: number[] = [];
   private listeners = new Set<(entries: string[]) => void>();
   private configListeners = new Set<(config: SplashConfig) => void>();
+  private notesListeners = new Set<(state: NotesState) => void>();
 
   constructor(options?: {
     tabs?: TabInfo[];
@@ -25,7 +32,8 @@ export class FakeBrowserAdapter implements BrowserAdapter {
     currentTabId?: number;
     history?: string[];
     visitedUrls?: HistoryVisit[];
-    config?: SplashConfig;
+    config?: Partial<SplashConfig>;
+    notes?: NotesState;
   }) {
     this.tabs = options?.tabs ? options.tabs.map((t) => ({ ...t })) : [];
     this.currentWindowId = options?.currentWindowId ?? 1;
@@ -37,6 +45,9 @@ export class FakeBrowserAdapter implements BrowserAdapter {
     this.config = options?.config
       ? normalizeConfig(options.config)
       : normalizeConfig(DEFAULT_CONFIG);
+    this.notes = options?.notes
+      ? normalizeNotesState(options.notes)
+      : normalizeNotesState(EMPTY_NOTES_STATE);
   }
 
   async getCurrentWindowId(): Promise<number> {
@@ -127,5 +138,32 @@ export class FakeBrowserAdapter implements BrowserAdapter {
     return () => {
       this.configListeners.delete(listener);
     };
+  }
+
+  async loadNotes(): Promise<NotesState> {
+    return normalizeNotesState(this.notes);
+  }
+
+  async saveNotes(state: NotesState): Promise<void> {
+    const normalized = normalizeNotesState(state);
+    this.notes = normalized;
+    for (const listener of this.notesListeners) {
+      listener(normalizeNotesState(normalized));
+    }
+  }
+
+  onNotesChanged(listener: (state: NotesState) => void): () => void {
+    this.notesListeners.add(listener);
+    return () => {
+      this.notesListeners.delete(listener);
+    };
+  }
+
+  emitExternalNotesChange(state: NotesState): void {
+    const normalized = normalizeNotesState(state);
+    this.notes = normalized;
+    for (const listener of this.notesListeners) {
+      listener(normalizeNotesState(normalized));
+    }
   }
 }

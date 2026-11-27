@@ -24,11 +24,17 @@ export interface HeaderConfig {
   divider: boolean;
 }
 
+export interface EnvConfig {
+  EDITOR: string;
+}
+
 export interface SplashConfig {
   header: HeaderConfig;
+  env: EnvConfig;
 }
 
 export const MAX_HEADER_TEXT_LENGTH = 14;
+export const MAX_ENV_VALUE_LENGTH = 64;
 
 export const DEFAULT_CONFIG: SplashConfig = {
   header: {
@@ -37,6 +43,9 @@ export const DEFAULT_CONFIG: SplashConfig = {
     density: 'compact',
     mono: false,
     divider: true,
+  },
+  env: {
+    EDITOR: '',
   },
 };
 
@@ -95,6 +104,21 @@ export function normalizeConfig(raw: unknown): SplashConfig {
   const divider =
     typeof h.divider === 'boolean' ? h.divider : DEFAULT_CONFIG.header.divider;
 
+  const envRaw =
+    raw && typeof raw === 'object' && 'env' in raw
+      ? (raw as { env?: unknown }).env
+      : undefined;
+  const e =
+    envRaw && typeof envRaw === 'object'
+      ? (envRaw as Record<string, unknown>)
+      : {};
+  const cleanedEditor =
+    typeof e.EDITOR === 'string' ? sanitizeTerminalText(e.EDITOR).trim() : '';
+  const editor =
+    cleanedEditor.length <= MAX_ENV_VALUE_LENGTH
+      ? cleanedEditor
+      : DEFAULT_CONFIG.env.EDITOR;
+
   return {
     header: {
       piece,
@@ -102,6 +126,9 @@ export function normalizeConfig(raw: unknown): SplashConfig {
       density,
       mono,
       divider,
+    },
+    env: {
+      EDITOR: editor,
     },
   };
 }
@@ -120,11 +147,14 @@ export function serializeConfig(config: SplashConfig): string {
     `header.mono = ${c.header.mono}`,
     '# header.divider: true | false (bottom hairline between header and terminal)',
     `header.divider = ${c.header.divider}`,
+    '# env.EDITOR: vim | (empty) (default editor for `note <id>`)',
+    c.env.EDITOR ? `env.EDITOR = ${c.env.EDITOR}` : 'env.EDITOR =',
   ].join('\n');
 }
 
 export function parseConfigText(input: string): ConfigParseResult {
   const header: HeaderConfig = { ...DEFAULT_CONFIG.header };
+  const env: EnvConfig = { ...DEFAULT_CONFIG.env };
   const lines = input.replace(/\r\n/g, '\n').split('\n');
 
   for (let idx = 0; idx < lines.length; idx++) {
@@ -199,6 +229,17 @@ export function parseConfigText(input: string): ConfigParseResult {
         header.divider = parsed;
         break;
       }
+      case 'env.EDITOR': {
+        const cleaned = sanitizeTerminalText(rawValue).trim();
+        if (cleaned.length > MAX_ENV_VALUE_LENGTH) {
+          return {
+            ok: false,
+            error: `line ${lineNum}: invalid env.EDITOR (expected at most ${MAX_ENV_VALUE_LENGTH} chars)`,
+          };
+        }
+        env.EDITOR = cleaned;
+        break;
+      }
       default:
         return {
           ok: false,
@@ -207,5 +248,5 @@ export function parseConfigText(input: string): ConfigParseResult {
     }
   }
 
-  return { ok: true, config: { header } };
+  return { ok: true, config: { header, env } };
 }

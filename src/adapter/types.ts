@@ -1,4 +1,5 @@
 import type { SplashConfig } from '../config/schema';
+import type { NotesState } from '../notes/types';
 
 export interface TabInfo {
   id: number;
@@ -36,4 +37,7 @@ export interface BrowserAdapter {
   loadConfig(): Promise<SplashConfig>;
   saveConfig(config: SplashConfig): Promise<void>;
   onConfigChanged(listener: (config: SplashConfig) => void): () => void;
+  loadNotes(): Promise<NotesState>;
+  saveNotes(state: NotesState): Promise<void>;
+  onNotesChanged(listener: (state: NotesState) => void): () => void;
 }

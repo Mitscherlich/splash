@@ -1,4 +1,5 @@
 import { normalizeConfig, type SplashConfig } from '../config/schema';
+import { normalizeNotesState, type NotesState } from '../notes/types';
 import type {
   BrowserAdapter,
   HistoryVisit,
@@ -8,6 +9,7 @@ import type {
 
 export const HISTORY_STORAGE_KEY = 'splash.history';
 export const CONFIG_STORAGE_KEY = 'splash.config';
+export const NOTES_STORAGE_KEY = 'splash.notes';
 export const DEFAULT_HISTORY_MAX_RESULTS = 1000;
 
 export interface ChromeApi {
@@ -214,6 +216,34 @@ export class ChromeBrowserAdapter implements BrowserAdapter {
       const change = changes[CONFIG_STORAGE_KEY];
       if (!change) return;
       listener(normalizeConfig(change.newValue));
+    };
+
+    this.api.storage.onChanged.addListener(handler);
+    return () => {
+      this.api.storage.onChanged.removeListener(handler);
+    };
+  }
+
+  async loadNotes(): Promise<NotesState> {
+    const stored = await this.api.storage.local.get(NOTES_STORAGE_KEY);
+    return normalizeNotesState(stored[NOTES_STORAGE_KEY]);
+  }
+
+  async saveNotes(state: NotesState): Promise<void> {
+    await this.api.storage.local.set({
+      [NOTES_STORAGE_KEY]: normalizeNotesState(state),
+    });
+  }
+
+  onNotesChanged(listener: (state: NotesState) => void): () => void {
+    const handler = (
+      changes: Record<string, { newValue?: unknown }>,
+      areaName: string,
+    ) => {
+      if (areaName !== 'local') return;
+      const change = changes[NOTES_STORAGE_KEY];
+      if (!change) return;
+      listener(normalizeNotesState(change.newValue));
     };
 
     this.api.storage.onChanged.addListener(handler);

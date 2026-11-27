@@ -89,6 +89,7 @@ describe('HeaderManager', () => {
         mono: false,
         divider: false,
       },
+      env: { ...DEFAULT_CONFIG.env },
     };
     manager.apply(donutConfig);
     expect(stops[0]).toHaveBeenCalledTimes(1);
@@ -121,6 +122,7 @@ describe('HeaderManager', () => {
         mono: false,
         divider: true,
       },
+      env: { ...DEFAULT_CONFIG.env },
     });
     expect(mountedTags).toEqual(['CANVAS']);
 
@@ -132,6 +134,7 @@ describe('HeaderManager', () => {
         mono: true,
         divider: true,
       },
+      env: { ...DEFAULT_CONFIG.env },
     });
     expect(stopFns[0]).toHaveBeenCalledTimes(1);
     expect(mountedTags).toEqual(['CANVAS', 'PRE']);
@@ -160,6 +163,7 @@ describe('HeaderManager', () => {
         ...DEFAULT_CONFIG.header,
         piece: 'none',
       },
+      env: { ...DEFAULT_CONFIG.env },
     });
     expect(stop).toHaveBeenCalledTimes(1);
     expect(mountPiece).toHaveBeenCalledTimes(1);

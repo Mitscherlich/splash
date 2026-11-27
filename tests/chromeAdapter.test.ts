@@ -3,9 +3,11 @@ import {
   CONFIG_STORAGE_KEY,
   ChromeBrowserAdapter,
   HISTORY_STORAGE_KEY,
+  NOTES_STORAGE_KEY,
   type ChromeApi,
 } from '../src/adapter/chromeAdapter';
 import { DEFAULT_CONFIG, type SplashConfig } from '../src/config/schema';
+import type { NotesState } from '../src/notes/types';
 
 function createChromeDouble() {
   const storageData: Record<string, unknown> = {};
@@ -236,13 +238,16 @@ describe('ChromeBrowserAdapter', () => {
 
     expect(await adapter.loadConfig()).toEqual(DEFAULT_CONFIG);
 
-    const updated = {
+    const updated: SplashConfig = {
       header: {
         piece: 'donut' as const,
         text: 'HELLO',
         density: 'standard' as const,
         mono: true,
         divider: false,
+      },
+      env: {
+        EDITOR: 'vim',
       },
     };
     await adapter.saveConfig(updated);
@@ -271,6 +276,7 @@ describe('ChromeBrowserAdapter', () => {
           ...DEFAULT_CONFIG.header,
           piece: 'night-coast',
         },
+        env: { ...DEFAULT_CONFIG.env },
       },
     ]);
 
@@ -313,5 +319,57 @@ describe('ChromeBrowserAdapter', () => {
     const apiWithoutHistory: ChromeApi = { ...api, history: undefined };
     const noHistoryAdapter = new ChromeBrowserAdapter(apiWithoutHistory);
     expect(await noHistoryAdapter.listVisitedUrls()).toEqual([]);
+  });
+
+  it('loads, saves, subscribes, and unsubscribes splash.notes in local storage only', async () => {
+    const { api, emitStorageChange } = createChromeDouble();
+    const adapter = new ChromeBrowserAdapter(api);
+
+    expect(await adapter.loadNotes()).toEqual({ nextId: 1, items: [] });
+
+    const state: NotesState = {
+      nextId: 3,
+      items: [
+        { id: 1, content: 'hello\nworld', createdAt: 100, updatedAt: 200 },
+      ],
+    };
+    await adapter.saveNotes(state);
+    expect(await adapter.loadNotes()).toEqual(state);
+
+    const received: NotesState[] = [];
+    const unsubscribe = adapter.onNotesChanged((next) => {
+      received.push(next);
+    });
+
+    emitStorageChange(
+      { [NOTES_STORAGE_KEY]: { newValue: { nextId: 9, items: [] } } },
+      'sync',
+    );
+    expect(received).toEqual([]);
+
+    emitStorageChange(
+      {
+        [NOTES_STORAGE_KEY]: {
+          newValue: {
+            nextId: 4,
+            items: [{ id: 3, content: 'synced', createdAt: 300, updatedAt: 300 }],
+          },
+        },
+      },
+      'local',
+    );
+    expect(received).toEqual([
+      {
+        nextId: 4,
+        items: [{ id: 3, content: 'synced', createdAt: 300, updatedAt: 300 }],
+      },
+    ]);
+
+    unsubscribe();
+    emitStorageChange(
+      { [NOTES_STORAGE_KEY]: { newValue: { nextId: 5, items: [] } } },
+      'local',
+    );
+    expect(received).toHaveLength(1);
   });
 });
