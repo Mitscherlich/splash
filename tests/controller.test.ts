@@ -378,4 +378,141 @@ describe('ShellController end-to-end', () => {
 
     controller.dispose();
   });
+
+  it('shows inline autojump URL ghost suggestion for open, accepts on Tab/Right, and preserves search on direct Enter', async () => {
+    const now = Date.now();
+    const adapter = new FakeBrowserAdapter({
+      visitedUrls: [
+        {
+          url: 'https://github.com/m9ch/splash',
+          title: 'm9ch/splash',
+          visitCount: 20,
+          typedCount: 5,
+          lastVisitTime: now - 60_000,
+        },
+        {
+          url: 'https://github.com/trending',
+          title: 'Trending',
+          visitCount: 4,
+          typedCount: 0,
+          lastVisitTime: now - 2 * 3_600_000,
+        },
+        {
+          url: 'https://docs.rs/tokio',
+          title: 'tokio - Rust',
+          visitCount: 8,
+          typedCount: 2,
+          lastVisitTime: now - 60_000,
+        },
+      ],
+    });
+    const term = new FakeTerminal(100);
+    const controller = new ShellController(term, adapter, createDefaultRegistry());
+    await controller.start();
+
+    // 1) Typing 'open gh' renders muted ghost preview pointing to top frecency URL
+    term.resetCapture();
+    await controller.handleData('open gh');
+    expect(term.rawOutput()).toContain('\x1b[90m');
+    expect(term.plainOutput()).toContain('https://github.com/m9ch/splash');
+
+    // Pressing Enter directly without Tab/Right keeps search fallback and clears ghost text
+    term.resetCapture();
+    await controller.handleData('\r');
+    expect(term.rawOutput()).toContain('\x1b[K');
+    expect(adapter.searches).toEqual(['gh']);
+    expect(adapter.openedUrls).toEqual([]);
+
+    // 2) Typing 'open gh' + Tab accepts top match, Enter opens it
+    term.resetCapture();
+    await controller.handleData('open gh');
+    await controller.handleData('\t');
+    expect(term.plainOutput()).toContain('https://github.com/m9ch/splash');
+    expect(term.plainOutput()).toContain('https://github.com/trending');
+    await controller.handleData('\r');
+    expect(adapter.openedUrls).toEqual(['https://github.com/m9ch/splash']);
+
+    // 3) Multi-word query 'open gh splash' + Tab replaces the entire argument span
+    await controller.handleData('open gh splash');
+    await controller.handleData('\t');
+    await controller.handleData('\r');
+    expect(adapter.openedUrls).toEqual([
+      'https://github.com/m9ch/splash',
+      'https://github.com/m9ch/splash',
+    ]);
+
+    // 4) Right arrow at end of line accepts inline ghost suggestion
+    await controller.handleData('open tok');
+    await controller.handleData('\x1b[C');
+    await controller.handleData('\r');
+    expect(adapter.openedUrls).toEqual([
+      'https://github.com/m9ch/splash',
+      'https://github.com/m9ch/splash',
+      'https://docs.rs/tokio',
+    ]);
+
+    controller.dispose();
+  });
+
+  it('cycles ranked open URL candidates on repeated Tab and Shift+Tab without duplicating the table', async () => {
+    const now = Date.now();
+    const adapter = new FakeBrowserAdapter({
+      visitedUrls: [
+        {
+          url: 'https://github.com/m9ch/splash',
+          title: 'm9ch/splash',
+          visitCount: 20,
+          typedCount: 5,
+          lastVisitTime: now - 60_000,
+        },
+        {
+          url: 'https://github.com/trending',
+          title: 'Trending',
+          visitCount: 6,
+          typedCount: 1,
+          lastVisitTime: now - 3_600_000,
+        },
+        {
+          url: 'https://gist.github.com',
+          title: 'GitHub Gist',
+          visitCount: 2,
+          typedCount: 0,
+          lastVisitTime: now - 24 * 3_600_000,
+        },
+      ],
+    });
+    const term = new FakeTerminal(100);
+    const controller = new ShellController(term, adapter, createDefaultRegistry());
+    await controller.start();
+
+    await controller.handleData('open gh');
+    // First Tab -> fills #1 and prints candidate table once
+    term.resetCapture();
+    await controller.handleData('\t');
+    expect(term.plainOutput()).toContain('GitHub Gist');
+
+    // Second Tab -> cycles in-place to #2 without re-printing the table
+    term.resetCapture();
+    await controller.handleData('\t');
+    expect(term.plainOutput()).toContain('https://github.com/trending');
+    expect(term.plainOutput()).not.toContain('GitHub Gist');
+
+    // Shift+Tab -> cycles back to #1
+    await controller.handleData('\x1b[Z');
+    // Tab again -> #2, then Enter opens #2
+    await controller.handleData('\t');
+    await controller.handleData('\r');
+    expect(adapter.openedUrls).toEqual(['https://github.com/trending']);
+
+    // Empty `open ` + Tab fills highest-frecency URL
+    await controller.handleData('open ');
+    await controller.handleData('\t');
+    await controller.handleData('\r');
+    expect(adapter.openedUrls).toEqual([
+      'https://github.com/trending',
+      'https://github.com/m9ch/splash',
+    ]);
+
+    controller.dispose();
+  });
 });

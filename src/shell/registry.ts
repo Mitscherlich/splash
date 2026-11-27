@@ -45,6 +45,9 @@ export interface CommandDefinition {
   summary: string;
   usage: string;
   manual?: CommandManual;
+  completionMode?: 'prefix' | 'cycle';
+  completeWholeArgs?: boolean;
+  inlineSuggest?: boolean;
   execute(ctx: CommandContext, args: string[]): Promise<void> | void;
   complete?(
     ctx: CommandContext,

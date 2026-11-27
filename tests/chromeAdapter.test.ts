@@ -55,6 +55,34 @@ function createChromeDouble() {
 
   const searchQuery = vi.fn(async (_info: chrome.search.QueryInfo) => undefined);
 
+  const historyItems: Array<Partial<chrome.history.HistoryItem>> = [
+    {
+      id: '1',
+      url: 'https://github.com/m9ch/splash',
+      title: 'm9ch/splash',
+      lastVisitTime: 1_700_000_000_000,
+      visitCount: 12,
+      typedCount: 4,
+    },
+    {
+      id: '2',
+      url: '',
+      title: 'Empty URL',
+      lastVisitTime: 1_700_000_000_000,
+      visitCount: 1,
+      typedCount: 0,
+    },
+    {
+      id: '3',
+      url: 'https://docs.rs/tokio',
+      lastVisitTime: 1_699_999_000_000,
+    },
+  ];
+  const historySearch = vi.fn(
+    async (_query: chrome.history.HistoryQuery) =>
+      historyItems as chrome.history.HistoryItem[],
+  );
+
   const storageGet = vi.fn(async (keys: string | string[]) => {
     const list = Array.isArray(keys) ? keys : [keys];
     const result: Record<string, unknown> = {};
@@ -82,6 +110,9 @@ function createChromeDouble() {
     search: {
       query: searchQuery,
     },
+    history: {
+      search: historySearch,
+    },
     storage: {
       local: {
         get: storageGet,
@@ -103,6 +134,7 @@ function createChromeDouble() {
       tabsCreate,
       windowsUpdate,
       searchQuery,
+      historySearch,
       storageGet,
       storageSet,
     },
@@ -248,5 +280,38 @@ describe('ChromeBrowserAdapter', () => {
       'local',
     );
     expect(received).toHaveLength(1);
+  });
+
+  it('lists visited URLs from chrome.history.search with normalized fields and empty-API fallback', async () => {
+    const { api, spies } = createChromeDouble();
+    const adapter = new ChromeBrowserAdapter(api);
+
+    const visits = await adapter.listVisitedUrls({ maxResults: 500 });
+    expect(spies.historySearch).toHaveBeenCalledWith({
+      text: '',
+      startTime: 0,
+      maxResults: 500,
+    });
+    expect(visits).toEqual([
+      {
+        url: 'https://github.com/m9ch/splash',
+        title: 'm9ch/splash',
+        visitCount: 12,
+        typedCount: 4,
+        lastVisitTime: 1_700_000_000_000,
+      },
+      {
+        url: 'https://docs.rs/tokio',
+        title: '',
+        visitCount: 0,
+        typedCount: 0,
+        lastVisitTime: 1_699_999_000_000,
+      },
+    ]);
+
+    // When chrome.history is unavailable (e.g. permission not granted yet), returns []
+    const apiWithoutHistory: ChromeApi = { ...api, history: undefined };
+    const noHistoryAdapter = new ChromeBrowserAdapter(apiWithoutHistory);
+    expect(await noHistoryAdapter.listVisitedUrls()).toEqual([]);
   });
 });

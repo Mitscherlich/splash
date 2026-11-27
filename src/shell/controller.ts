@@ -40,9 +40,37 @@ function longestCommonPrefix(values: string[]): string {
   return prefix;
 }
 
+const COMMAND_PREFIX_RE = /^\s*(?:'[^']*'|"[^"]*"|\S+)\s+/;
+
+function splitCommandArgsPrefix(
+  lineBeforeCursor: string,
+): { prefixBeforeArgs: string; wholeArgs: string } | null {
+  const match = COMMAND_PREFIX_RE.exec(lineBeforeCursor);
+  if (!match) return null;
+  return {
+    prefixBeforeArgs: match[0],
+    wholeArgs: lineBeforeCursor.slice(match[0].length),
+  };
+}
+
+interface InlineSuggestionState {
+  value: string;
+  prefixBeforeToken: string;
+  after: string;
+}
+
+interface CompletionCycleState {
+  items: CompletionItem[];
+  index: number;
+  prefixBeforeToken: string;
+  after: string;
+}
+
 export class ShellController {
   private readonly editor = new LineEditor();
   private renderedCursorRow = 0;
+  private inlineSuggestion: InlineSuggestionState | null = null;
+  private completionCycle: CompletionCycleState | null = null;
   private queue: Promise<void> = Promise.resolve();
   private sessionQueue: Promise<void> = Promise.resolve();
   private activeSession: {
@@ -121,14 +149,18 @@ export class ShellController {
     // Bracketed paste mode: \x1b[200~ ... \x1b[201~
     if (data.startsWith('\x1b[200~') && data.endsWith('\x1b[201~')) {
       const pasted = data.slice(6, -6);
+      this.clearCompletionState();
       this.editor.paste(pasted);
+      await this.refreshInlineSuggestion();
       this.redrawLine();
       return;
     }
 
     // Raw multi-line paste (newlines folded to spaces without executing)
     if (data.length > 1 && !data.startsWith('\x1b') && /[\r\n]/.test(data)) {
+      this.clearCompletionState();
       this.editor.paste(data);
+      await this.refreshInlineSuggestion();
       this.redrawLine();
       return;
     }
@@ -136,7 +168,7 @@ export class ShellController {
     let i = 0;
     while (i < data.length) {
       if (data[i] === '\x1b') {
-        const consumed = this.handleEscapeSequence(data, i);
+        const consumed = await this.handleEscapeSequence(data, i);
         i += consumed;
         continue;
       }
@@ -153,7 +185,9 @@ export class ShellController {
         continue;
       }
       if (ch === '\x7f' || ch === '\b') {
+        this.clearCompletionState();
         if (this.editor.backspace()) {
+          await this.refreshInlineSuggestion();
           this.redrawLine();
         }
         i += 1;
@@ -161,6 +195,8 @@ export class ShellController {
       }
       if (ch === '\x03') {
         // Ctrl+C
+        this.clearGhostFromTerminal();
+        this.clearCompletionState();
         this.moveToLineEndBeforeNewline();
         this.terminal.write('^C\r\n');
         this.editor.reset();
@@ -178,31 +214,51 @@ export class ShellController {
       }
       if (ch === '\x01') {
         // Ctrl+A
-        if (this.editor.moveHome()) this.redrawLine();
+        this.clearCompletionState();
+        if (this.editor.moveHome()) {
+          await this.refreshInlineSuggestion();
+          this.redrawLine();
+        }
         i += 1;
         continue;
       }
       if (ch === '\x05') {
         // Ctrl+E
-        if (this.editor.moveEnd()) this.redrawLine();
+        this.clearCompletionState();
+        if (this.editor.moveEnd()) {
+          await this.refreshInlineSuggestion();
+          this.redrawLine();
+        }
         i += 1;
         continue;
       }
       if (ch === '\x15') {
         // Ctrl+U
-        if (this.editor.killToStart()) this.redrawLine();
+        this.clearCompletionState();
+        if (this.editor.killToStart()) {
+          await this.refreshInlineSuggestion();
+          this.redrawLine();
+        }
         i += 1;
         continue;
       }
       if (ch === '\x0b') {
         // Ctrl+K
-        if (this.editor.killToEnd()) this.redrawLine();
+        this.clearCompletionState();
+        if (this.editor.killToEnd()) {
+          await this.refreshInlineSuggestion();
+          this.redrawLine();
+        }
         i += 1;
         continue;
       }
       if (ch === '\x17') {
         // Ctrl+W
-        if (this.editor.killPrevWord()) this.redrawLine();
+        this.clearCompletionState();
+        if (this.editor.killPrevWord()) {
+          await this.refreshInlineSuggestion();
+          this.redrawLine();
+        }
         i += 1;
         continue;
       }
@@ -221,49 +277,98 @@ export class ShellController {
         if (c < 0x20 || c === 0x7f) break;
         end += 1;
       }
+      this.clearCompletionState();
       this.editor.insert(data.slice(i, end));
+      await this.refreshInlineSuggestion();
       this.redrawLine();
       i = end;
     }
   }
 
-  private handleEscapeSequence(data: string, start: number): number {
+  private async handleEscapeSequence(
+    data: string,
+    start: number,
+  ): Promise<number> {
     const rest = data.slice(start);
 
+    if (rest.startsWith('\x1b[Z')) {
+      // Shift+Tab cycles backwards when a cycle completion session is active
+      if (this.completionCycle) {
+        this.stepCompletionCycle(-1);
+      }
+      return 3;
+    }
     if (rest.startsWith('\x1b[A')) {
-      if (this.editor.historyUp()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.historyUp()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[B')) {
-      if (this.editor.historyDown()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.historyDown()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[C')) {
-      if (this.editor.moveRight()) this.redrawLine();
+      this.completionCycle = null;
+      if (this.editor.moveRight()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      } else if (this.inlineSuggestion) {
+        this.acceptInlineSuggestion();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[D')) {
-      if (this.editor.moveLeft()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.moveLeft()) {
+        this.redrawLine();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[H') || rest.startsWith('\x1bOH')) {
-      if (this.editor.moveHome()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.moveHome()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[F') || rest.startsWith('\x1bOF')) {
-      if (this.editor.moveEnd()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.moveEnd()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 3;
     }
     if (rest.startsWith('\x1b[1~') || rest.startsWith('\x1b[7~')) {
-      if (this.editor.moveHome()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.moveHome()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 4;
     }
     if (rest.startsWith('\x1b[4~') || rest.startsWith('\x1b[8~')) {
-      if (this.editor.moveEnd()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.moveEnd()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 4;
     }
     if (rest.startsWith('\x1b[3~')) {
-      if (this.editor.deleteForward()) this.redrawLine();
+      this.clearCompletionState();
+      if (this.editor.deleteForward()) {
+        await this.refreshInlineSuggestion();
+        this.redrawLine();
+      }
       return 4;
     }
 
@@ -288,6 +393,8 @@ export class ShellController {
 
   private async submitCurrentLine(): Promise<void> {
     const line = this.editor.buffer;
+    this.clearGhostFromTerminal();
+    this.clearCompletionState();
     this.moveToLineEndBeforeNewline();
     this.terminal.write('\r\n');
     this.editor.reset();
@@ -338,13 +445,162 @@ export class ShellController {
     this.writePrompt();
   }
 
+  private clearCompletionState(): void {
+    this.completionCycle = null;
+    this.inlineSuggestion = null;
+  }
+
+  private clearGhostFromTerminal(): void {
+    if (this.inlineSuggestion !== null) {
+      this.terminal.write('\x1b[K');
+    }
+  }
+
+  private acceptInlineSuggestion(): void {
+    const suggestion = this.inlineSuggestion;
+    if (!suggestion) return;
+    this.clearCompletionState();
+    const nextBuffer = `${suggestion.prefixBeforeToken}${suggestion.value}${suggestion.after}`;
+    const nextCursor = suggestion.prefixBeforeToken.length + suggestion.value.length;
+    this.editor.setBuffer(nextBuffer, nextCursor);
+    this.redrawLine();
+  }
+
+  private stepCompletionCycle(delta: 1 | -1): void {
+    const cycle = this.completionCycle;
+    if (!cycle || cycle.items.length === 0) return;
+    const len = cycle.items.length;
+    cycle.index = (cycle.index + delta + len) % len;
+    const item = cycle.items[cycle.index]!;
+    const nextBuffer = `${cycle.prefixBeforeToken}${item.value}${cycle.after}`;
+    const nextCursor = cycle.prefixBeforeToken.length + item.value.length;
+    this.inlineSuggestion = null;
+    this.editor.setBuffer(nextBuffer, nextCursor);
+    this.redrawLine();
+  }
+
+  private async refreshInlineSuggestion(): Promise<void> {
+    if (this.disposed || this.completionCycle !== null) {
+      this.inlineSuggestion = null;
+      return;
+    }
+    const after = this.editor.afterCursor();
+    if (after.length > 0) {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    const before = this.editor.beforeCursor();
+    const compCtx = parseCompletionContext(before);
+    if (!compCtx || compCtx.isCommand) {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    const cmd = this.registry.get(compCtx.command);
+    if (!cmd?.complete || !cmd.inlineSuggest) {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    let prefixBeforeToken = before.slice(0, compCtx.tokenStart);
+    let queryArgs = compCtx.args;
+    let queryToken = compCtx.currentToken;
+
+    if (cmd.completeWholeArgs) {
+      const split = splitCommandArgsPrefix(before);
+      if (!split) {
+        this.inlineSuggestion = null;
+        return;
+      }
+      prefixBeforeToken = split.prefixBeforeArgs;
+      queryArgs = [];
+      queryToken = split.wholeArgs;
+    }
+
+    if (queryToken.trim().length === 0) {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    const snapshotBuffer = this.editor.buffer;
+    const snapshotCursor = this.editor.cursor;
+
+    let items: CompletionItem[];
+    try {
+      items = await cmd.complete(
+        this.createCommandContext(),
+        queryArgs,
+        queryToken,
+      );
+    } catch {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    if (
+      this.disposed ||
+      this.completionCycle !== null ||
+      this.editor.buffer !== snapshotBuffer ||
+      this.editor.cursor !== snapshotCursor
+    ) {
+      return;
+    }
+
+    const top = items[0];
+    if (!top || top.value === queryToken.trim()) {
+      this.inlineSuggestion = null;
+      return;
+    }
+
+    this.inlineSuggestion = {
+      value: top.value,
+      prefixBeforeToken,
+      after: '',
+    };
+  }
+
+  private printCompletionTable(items: CompletionItem[]): void {
+    this.clearGhostFromTerminal();
+    this.moveToLineEndBeforeNewline();
+    this.terminal.write('\r\n');
+    this.renderedCursorRow = 0;
+
+    const cols = Math.max(20, this.terminal.cols);
+    const rawMaxValWidth = Math.max(...items.map((item) => item.value.length));
+    const maxValCol = Math.max(20, Math.floor(cols * 0.65));
+    const valWidth = Math.min(rawMaxValWidth, maxValCol);
+    const labelBudget = cols - valWidth - 4;
+
+    for (const item of items) {
+      const displayedVal =
+        item.value.length > valWidth
+          ? truncateToWidth(item.value, valWidth)
+          : item.value.padEnd(valWidth, ' ');
+      const valText = ansi.accent(displayedVal);
+      if (item.label && labelBudget >= 8) {
+        const labelText = ansi.muted(truncateToWidth(item.label, labelBudget));
+        this.terminal.writeln(`  ${valText}  ${labelText}`);
+      } else {
+        this.terminal.writeln(`  ${valText}`);
+      }
+    }
+  }
+
   private async handleTabCompletion(): Promise<void> {
+    if (this.completionCycle) {
+      this.stepCompletionCycle(1);
+      return;
+    }
+
     const before = this.editor.beforeCursor();
     const after = this.editor.afterCursor();
     const compCtx = parseCompletionContext(before);
     if (!compCtx) return;
 
     let items: CompletionItem[] = [];
+    let prefixBeforeToken = before.slice(0, compCtx.tokenStart);
+    let completionMode: 'prefix' | 'cycle' = 'prefix';
 
     if (compCtx.isCommand) {
       items = this.registry
@@ -355,11 +611,23 @@ export class ShellController {
     } else {
       const cmd = this.registry.get(compCtx.command);
       if (!cmd?.complete) return;
+      completionMode = cmd.completionMode ?? 'prefix';
+
+      let queryArgs = compCtx.args;
+      let queryToken = compCtx.currentToken;
+      if (cmd.completeWholeArgs) {
+        const split = splitCommandArgsPrefix(before);
+        if (!split) return;
+        prefixBeforeToken = split.prefixBeforeArgs;
+        queryArgs = [];
+        queryToken = split.wholeArgs;
+      }
+
       try {
         items = await cmd.complete(
           this.createCommandContext(),
-          compCtx.args,
-          compCtx.currentToken,
+          queryArgs,
+          queryToken,
         );
       } catch {
         return;
@@ -368,7 +636,26 @@ export class ShellController {
 
     if (items.length === 0) return;
 
-    const prefixBeforeToken = before.slice(0, compCtx.tokenStart);
+    if (completionMode === 'cycle') {
+      const first = items[0]!;
+      if (items.length > 1) {
+        this.printCompletionTable(items);
+        this.completionCycle = {
+          items,
+          index: 0,
+          prefixBeforeToken,
+          after,
+        };
+      } else {
+        this.completionCycle = null;
+      }
+      this.inlineSuggestion = null;
+      const nextBuffer = `${prefixBeforeToken}${first.value}${after}`;
+      const nextCursor = prefixBeforeToken.length + first.value.length;
+      this.editor.setBuffer(nextBuffer, nextCursor);
+      this.redrawLine();
+      return;
+    }
 
     if (items.length === 1) {
       const only = items[0]!;
@@ -377,6 +664,7 @@ export class ShellController {
       const inserted = needsTrailingSpace ? `${only.value} ` : only.value;
       const nextBuffer = `${prefixBeforeToken}${inserted}${after}`;
       const nextCursor = prefixBeforeToken.length + inserted.length;
+      this.inlineSuggestion = null;
       this.editor.setBuffer(nextBuffer, nextCursor);
       this.redrawLine();
       return;
@@ -389,25 +677,7 @@ export class ShellController {
       this.editor.setBuffer(nextBuffer, nextCursor);
     }
 
-    // Print compact completion table below current prompt line, then redraw prompt
-    this.moveToLineEndBeforeNewline();
-    this.terminal.write('\r\n');
-    this.renderedCursorRow = 0;
-
-    const cols = Math.max(20, this.terminal.cols);
-    const valWidth = Math.max(...items.map((item) => item.value.length));
-    const labelBudget = Math.max(8, cols - valWidth - 4);
-
-    for (const item of items) {
-      const valText = ansi.accent(item.value.padEnd(valWidth, ' '));
-      if (item.label) {
-        const labelText = ansi.muted(truncateToWidth(item.label, labelBudget));
-        this.terminal.writeln(`  ${valText}  ${labelText}`);
-      } else {
-        this.terminal.writeln(`  ${valText}`);
-      }
-    }
-
+    this.printCompletionTable(items);
     this.redrawLine();
   }
 
@@ -504,6 +774,24 @@ export class ShellController {
 
     const atLineEnd = before.length === buffer.length;
     if (atLineEnd && endPos.pendingWrap) {
+      this.renderedCursorRow = endPos.row;
+      this.terminal.write(seq);
+      return;
+    }
+
+    if (atLineEnd && this.inlineSuggestion) {
+      const maxGhostWidth = cols - endPos.col - 1;
+      if (maxGhostWidth >= 8) {
+        const ghostText = truncateToWidth(
+          `  → ${this.inlineSuggestion.value}`,
+          maxGhostWidth,
+        );
+        seq += ansi.muted(ghostText);
+        seq += '\r';
+        if (endPos.col > 0) {
+          seq += `\x1b[${endPos.col}C`;
+        }
+      }
       this.renderedCursorRow = endPos.row;
       this.terminal.write(seq);
       return;

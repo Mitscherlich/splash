@@ -1,8 +1,14 @@
 import { normalizeConfig, type SplashConfig } from '../config/schema';
-import type { BrowserAdapter, TabInfo } from './types';
+import type {
+  BrowserAdapter,
+  HistoryVisit,
+  ListVisitedUrlsOptions,
+  TabInfo,
+} from './types';
 
 export const HISTORY_STORAGE_KEY = 'splash.history';
 export const CONFIG_STORAGE_KEY = 'splash.config';
+export const DEFAULT_HISTORY_MAX_RESULTS = 1000;
 
 export interface ChromeApi {
   tabs: {
@@ -24,6 +30,9 @@ export interface ChromeApi {
   };
   search: {
     query(queryInfo: chrome.search.QueryInfo): Promise<void>;
+  };
+  history?: {
+    search(query: chrome.history.HistoryQuery): Promise<chrome.history.HistoryItem[]>;
   };
   storage: {
     local: {
@@ -129,6 +138,34 @@ export class ChromeBrowserAdapter implements BrowserAdapter {
 
   async search(query: string): Promise<void> {
     await this.api.search.query({ text: query, disposition: 'NEW_TAB' });
+  }
+
+  async listVisitedUrls(
+    options?: ListVisitedUrlsOptions,
+  ): Promise<HistoryVisit[]> {
+    if (!this.api.history?.search) {
+      return [];
+    }
+    const raw = await this.api.history.search({
+      text: '',
+      startTime: options?.startTime ?? 0,
+      maxResults: options?.maxResults ?? DEFAULT_HISTORY_MAX_RESULTS,
+    });
+    const visits: HistoryVisit[] = [];
+    for (const item of raw) {
+      if (typeof item.url !== 'string' || item.url.length === 0) {
+        continue;
+      }
+      visits.push({
+        url: item.url,
+        title: item.title ?? '',
+        visitCount: typeof item.visitCount === 'number' ? item.visitCount : 0,
+        typedCount: typeof item.typedCount === 'number' ? item.typedCount : 0,
+        lastVisitTime:
+          typeof item.lastVisitTime === 'number' ? item.lastVisitTime : 0,
+      });
+    }
+    return visits;
   }
 
   async loadHistory(): Promise<string[]> {

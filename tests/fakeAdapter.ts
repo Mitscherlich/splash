@@ -1,4 +1,9 @@
-import type { BrowserAdapter, TabInfo } from '../src/adapter/types';
+import type {
+  BrowserAdapter,
+  HistoryVisit,
+  ListVisitedUrlsOptions,
+  TabInfo,
+} from '../src/adapter/types';
 import { DEFAULT_CONFIG, normalizeConfig, type SplashConfig } from '../src/config/schema';
 
 export class FakeBrowserAdapter implements BrowserAdapter {
@@ -6,6 +11,7 @@ export class FakeBrowserAdapter implements BrowserAdapter {
   currentWindowId: number;
   currentTabId: number | undefined;
   history: string[];
+  visitedUrls: HistoryVisit[];
   config: SplashConfig;
   openedUrls: string[] = [];
   searches: string[] = [];
@@ -18,12 +24,16 @@ export class FakeBrowserAdapter implements BrowserAdapter {
     currentWindowId?: number;
     currentTabId?: number;
     history?: string[];
+    visitedUrls?: HistoryVisit[];
     config?: SplashConfig;
   }) {
     this.tabs = options?.tabs ? options.tabs.map((t) => ({ ...t })) : [];
     this.currentWindowId = options?.currentWindowId ?? 1;
     this.currentTabId = options?.currentTabId;
     this.history = options?.history ? [...options.history] : [];
+    this.visitedUrls = options?.visitedUrls
+      ? options.visitedUrls.map((v) => ({ ...v }))
+      : [];
     this.config = options?.config
       ? normalizeConfig(options.config)
       : normalizeConfig(DEFAULT_CONFIG);
@@ -64,6 +74,18 @@ export class FakeBrowserAdapter implements BrowserAdapter {
 
   async search(query: string): Promise<void> {
     this.searches.push(query);
+  }
+
+  async listVisitedUrls(
+    options?: ListVisitedUrlsOptions,
+  ): Promise<HistoryVisit[]> {
+    const startTime = options?.startTime ?? 0;
+    const filtered = this.visitedUrls.filter((v) => v.lastVisitTime >= startTime);
+    const limited =
+      options?.maxResults !== undefined
+        ? filtered.slice(0, options.maxResults)
+        : filtered;
+    return limited.map((v) => ({ ...v }));
   }
 
   async loadHistory(): Promise<string[]> {

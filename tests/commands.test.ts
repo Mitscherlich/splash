@@ -351,6 +351,47 @@ describe('open command and resolveOpenTarget', () => {
     await searchRun.registry.get('open')!.execute(searchRun.ctx, ['chrome', 'mv3', 'search']);
     expect(adapter.searches).toEqual(['chrome mv3 search']);
   });
+
+  it('completes recently visited URLs ranked by frecency with sanitized labels', async () => {
+    const now = Date.now();
+    const adapter = new FakeBrowserAdapter({
+      visitedUrls: [
+        {
+          url: 'https://github.com/m9ch/splash',
+          title: 'm9ch/splash\x1b[2J',
+          visitCount: 12,
+          typedCount: 4,
+          lastVisitTime: now - 60_000,
+        },
+        {
+          url: 'https://github.com/trending',
+          title: 'Trending',
+          visitCount: 2,
+          typedCount: 0,
+          lastVisitTime: now - 10 * 24 * 3_600_000,
+        },
+        {
+          url: 'https://docs.rs/tokio',
+          title: 'tokio - Rust',
+          visitCount: 6,
+          typedCount: 1,
+          lastVisitTime: now - 60_000,
+        },
+      ],
+    });
+    const { ctx, registry } = createContext(adapter);
+    const open = registry.get('open')!;
+
+    expect(open.complete).toBeDefined();
+    const matches = await open.complete!(ctx, [], 'gh');
+    expect(matches).toEqual([
+      { value: 'https://github.com/m9ch/splash', label: 'm9ch/splash[2J' },
+      { value: 'https://github.com/trending', label: 'Trending' },
+    ]);
+
+    const none = await open.complete!(ctx, [], 'zzzz-unmatched');
+    expect(none).toEqual([]);
+  });
 });
 
 describe('clear and help commands', () => {
