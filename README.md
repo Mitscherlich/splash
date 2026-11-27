@@ -112,3 +112,7 @@ bun run test       # Run Vitest unit & integration test suite
 bun run typecheck  # Type-check with TypeScript (tsc --noEmit)
 bun run build      # Build production extension bundle into dist/
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details. Third-party open-source license notices for bundled dependencies are included in [public/THIRD_PARTY_NOTICES.txt](public/THIRD_PARTY_NOTICES.txt) (and copied to `dist/THIRD_PARTY_NOTICES.txt` on build).
