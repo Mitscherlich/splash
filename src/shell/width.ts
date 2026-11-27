@@ -190,3 +190,52 @@ export function padRightToWidth(str: string, targetCols: number): string {
   if (width >= targetCols) return str;
   return str + ' '.repeat(targetCols - width);
 }
+
+export function sliceByDisplayWidth(
+  str: string,
+  startCol: number,
+  maxCols: number,
+): string {
+  if (maxCols <= 0) return '';
+  const start = Math.max(0, startCol);
+  let col = 0;
+  let used = 0;
+  let out = '';
+
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    const w = cp !== undefined ? charDisplayWidth(cp) : 0;
+    if (w === 0) {
+      if (col > start && used > 0 && used <= maxCols) {
+        out += ch;
+      }
+      continue;
+    }
+
+    const nextCol = col + w;
+    if (nextCol <= start) {
+      col = nextCol;
+      continue;
+    }
+
+    if (col < start && nextCol > start) {
+      const overlap = Math.min(nextCol - start, maxCols - used);
+      out += ' '.repeat(overlap);
+      used += overlap;
+      col = nextCol;
+      if (used >= maxCols) break;
+      continue;
+    }
+
+    if (used + w > maxCols) {
+      break;
+    }
+
+    out += ch;
+    used += w;
+    col = nextCol;
+    if (used >= maxCols) break;
+  }
+
+  return out;
+}

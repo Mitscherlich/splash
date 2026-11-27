@@ -1,6 +1,11 @@
 import { ansi } from './ansi';
 import type { InteractiveSession, SessionIO } from './registry';
-import { stringDisplayWidth, truncateToWidth } from './width';
+import {
+  charDisplayWidth,
+  sliceByDisplayWidth,
+  stringDisplayWidth,
+  truncateToWidth,
+} from './width';
 
 export type VimSaveResult =
   | { ok: true; message?: string }
@@ -9,6 +14,7 @@ export type VimSaveResult =
 export interface VimSessionOptions {
   filePath: string;
   initialContent: string;
+  useAltScreen?: boolean;
   onSave: (content: string) => Promise<VimSaveResult>;
 }
 
@@ -23,13 +29,15 @@ interface UndoSnapshot {
 const MAX_UNDO = 100;
 
 export class VimSession implements InteractiveSession {
-  private readonly filePath: string;
+  private filePath: string;
+  private readonly useAltScreen: boolean;
   private readonly onSave: (content: string) => Promise<VimSaveResult>;
   private io: SessionIO | null = null;
   private lines: string[][];
   private row = 0;
   private col = 0;
   private scrollTop = 0;
+  private scrollLeft = 0;
   private mode: VimMode = 'normal';
   private dirty = false;
   private pendingKey: 'g' | 'd' | 'Z' | null = null;
@@ -41,6 +49,7 @@ export class VimSession implements InteractiveSession {
 
   constructor(options: VimSessionOptions) {
     this.filePath = options.filePath;
+    this.useAltScreen = options.useAltScreen ?? true;
     this.onSave = options.onSave;
     const rawLines = options.initialContent.replace(/\r\n/g, '\n').split('\n');
     this.lines = rawLines.length > 0 ? rawLines.map((line) => Array.from(line)) : [[]];
@@ -48,8 +57,15 @@ export class VimSession implements InteractiveSession {
 
   start(io: SessionIO): void {
     this.io = io;
-    this.io.write('\x1b[?1049h\x1b[2J\x1b[H');
+    this.io.write(this.useAltScreen ? '\x1b[?1049h\x1b[2J\x1b[H' : '\x1b[2J\x1b[H');
     this.render();
+  }
+
+  setFilePath(filePath: string): void {
+    this.filePath = filePath;
+    if (!this.exited && this.io) {
+      this.render();
+    }
   }
 
   handleResize(_cols: number, _rows: number): void {
@@ -498,7 +514,9 @@ export class VimSession implements InteractiveSession {
   private exitEditor(): void {
     if (this.exited) return;
     this.exited = true;
-    this.io?.write('\x1b[?1049l');
+    if (this.useAltScreen) {
+      this.io?.write('\x1b[?1049l');
+    }
     this.io?.exit();
   }
 
@@ -518,6 +536,27 @@ export class VimSession implements InteractiveSession {
     const gutterWidth = numWidth + 1;
     const textCols = Math.max(1, cols - gutterWidth);
 
+    const activeLine = this.currentLine();
+    const beforeCursor = activeLine.slice(0, this.col).join('');
+    const cursorDisplayCol = stringDisplayWidth(beforeCursor);
+    const charAtCursor =
+      this.mode !== 'insert' && this.col < activeLine.length
+        ? activeLine[this.col]
+        : undefined;
+    const cursorCharWidth =
+      charAtCursor !== undefined
+        ? Math.max(1, charDisplayWidth(charAtCursor.codePointAt(0)!))
+        : 1;
+
+    if (cursorDisplayCol < this.scrollLeft) {
+      this.scrollLeft = cursorDisplayCol;
+    } else if (cursorDisplayCol + cursorCharWidth > this.scrollLeft + textCols) {
+      this.scrollLeft = Math.max(
+        0,
+        cursorDisplayCol + cursorCharWidth - textCols,
+      );
+    }
+
     let out = '\x1b[?25l';
 
     for (let r = 0; r < contentRows; r++) {
@@ -528,8 +567,8 @@ export class VimSession implements InteractiveSession {
       if (lineIdx < this.lines.length) {
         const lineNum = String(lineIdx + 1).padStart(numWidth, ' ');
         const text = this.lines[lineIdx]!.join('');
-        const clipped = truncateToWidth(text, textCols);
-        out += `${ansi.muted(lineNum)} ${clipped}`;
+        const visible = sliceByDisplayWidth(text, this.scrollLeft, textCols);
+        out += `${ansi.muted(lineNum)} ${visible}`;
       } else {
         out += ansi.muted('~');
       }
@@ -562,8 +601,10 @@ export class VimSession implements InteractiveSession {
       out += `\x1b[${rows};${cmdCol}H\x1b[?25h`;
     } else {
       const cursorRow = Math.max(1, Math.min(contentRows, this.row - this.scrollTop + 1));
-      const beforeCursor = this.currentLine().slice(0, this.col).join('');
-      const cursorCol = Math.min(cols, gutterWidth + 1 + stringDisplayWidth(beforeCursor));
+      const cursorCol = Math.max(
+        gutterWidth + 1,
+        Math.min(cols, gutterWidth + 1 + (cursorDisplayCol - this.scrollLeft)),
+      );
       out += `\x1b[${cursorRow};${cursorCol}H\x1b[?25h`;
     }
 

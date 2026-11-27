@@ -3,6 +3,7 @@ import {
   charDisplayWidth,
   padRightToWidth,
   sanitizeTerminalText,
+  sliceByDisplayWidth,
   stringDisplayWidth,
   truncateToWidth,
 } from '../src/shell/width';
@@ -69,5 +70,25 @@ describe('padRightToWidth', () => {
     expect(padRightToWidth('abc', 6)).toBe('abc   ');
     expect(padRightToWidth('中文', 6)).toBe('中文  ');
     expect(padRightToWidth('中文测试', 6)).toBe('中文测试');
+  });
+});
+
+describe('sliceByDisplayWidth', () => {
+  it('slices ASCII strings by start display column and max width', () => {
+    expect(sliceByDisplayWidth('abcdefghij', 0, 5)).toBe('abcde');
+    expect(sliceByDisplayWidth('abcdefghij', 3, 4)).toBe('defg');
+    expect(sliceByDisplayWidth('abcdefghij', 8, 5)).toBe('ij');
+    expect(sliceByDisplayWidth('abcdefghij', 20, 5)).toBe('');
+  });
+
+  it('handles CJK wide-char boundaries safely without exceeding maxCols', () => {
+    // '中'(0..1) '文'(2..3) '测'(4..5) '试'(6..7)
+    expect(sliceByDisplayWidth('中文测试', 0, 5)).toBe('中文');
+    // startCol=1 splits '中' (cols 0..1), so pad 1 space for the trailing half, then '文'(2..3), '测'(4..5)
+    const splitLeft = sliceByDisplayWidth('中文测试', 1, 5);
+    expect(splitLeft).toBe(' 文测');
+    expect(stringDisplayWidth(splitLeft)).toBe(5);
+    // startCol=2 starts cleanly on '文'
+    expect(sliceByDisplayWidth('中文测试', 2, 4)).toBe('文测');
   });
 });

@@ -251,4 +251,76 @@ describe('VimSession', () => {
     await vim.handleData(':q!\r');
     expect(host.isExited()).toBe(true);
   });
+
+  it('supports useAltScreen=false and dynamic setFilePath updates for modal note editing', async () => {
+    const host = createSessionHost(40, 8);
+    const vim = new VimSession({
+      filePath: 'note://new',
+      initialContent: 'draft',
+      useAltScreen: false,
+      onSave: async () => ({ ok: true }),
+    });
+
+    vim.start(host.io);
+    expect(host.raw()).not.toContain('\x1b[?1049h');
+    expect(host.plain()).toContain('note://new');
+
+    host.clearCapture();
+    vim.setFilePath('note://7');
+    expect(host.plain()).toContain('note://7');
+
+    host.clearCapture();
+    await vim.handleData(':q\r');
+    expect(host.isExited()).toBe(true);
+    expect(host.raw()).not.toContain('\x1b[?1049l');
+  });
+
+  it('horizontally scrolls long ASCII and CJK lines so the cursor and tail remain visible', async () => {
+    // cols=15, gutter=" 1 " (3 cols) -> textCols=12
+    const host = createSessionHost(15, 6);
+    const longAscii = '0123456789ABCDEFGHIJ';
+    const vim = new VimSession({
+      filePath: 'note://1',
+      initialContent: longAscii,
+      useAltScreen: false,
+      onSave: async () => ({ ok: true }),
+    });
+
+    vim.start(host.io);
+    expect(host.plain()).toContain(' 1 0123456789AB');
+    expect(host.plain()).not.toContain('0123456789A…');
+
+    // Jump to end of line ($): tail 'ABCDEFGHIJ' must scroll into view, cursor inside [4, 15]
+    host.clearCapture();
+    await vim.handleData('$');
+    expect(host.plain()).toContain('ABCDEFGHIJ');
+    expect(host.raw()).toContain('\x1b[1;15H');
+
+    // Jump back to start (0): prefix scrolls back into view, cursor at col 4
+    host.clearCapture();
+    await vim.handleData('0');
+    expect(host.plain()).toContain('0123456789AB');
+    expect(host.raw()).toContain('\x1b[1;4H');
+
+    // CJK line wider than textCols=12 (10 CJK chars = 20 display cols)
+    const cjkHost = createSessionHost(15, 6);
+    const cjkVim = new VimSession({
+      filePath: 'note://2',
+      initialContent: '一二三四五六七八九十',
+      useAltScreen: false,
+      onSave: async () => ({ ok: true }),
+    });
+    cjkVim.start(cjkHost.io);
+    expect(cjkHost.plain()).toContain('一二三四五六');
+
+    cjkHost.clearCapture();
+    await cjkVim.handleData('$');
+    expect(cjkHost.plain()).toContain('十');
+    // '十' is 2 cols wide; its left edge must fit cleanly within cols=15 (gutter=3 -> col <= 14)
+    const cursorMatch = /\x1b\[1;(\d+)H\x1b\[\?25h/.exec(cjkHost.raw());
+    expect(cursorMatch).not.toBeNull();
+    const cursorCol = Number(cursorMatch![1]);
+    expect(cursorCol).toBeGreaterThanOrEqual(4);
+    expect(cursorCol).toBeLessThanOrEqual(14);
+  });
 });
