@@ -1,14 +1,17 @@
 import type { BrowserAdapter } from '../adapter/types';
+import type { SplashConfig } from '../config/schema';
 import { PROMPT_TEXT } from '../theme/defaultTheme';
 import { ansi } from './ansi';
 import { LineEditor } from './lineEditor';
-import { parseCommandLine, parseCompletionContext } from './parser';
+import { parseCompletionContext, parsePipeline } from './parser';
 import type {
   CommandContext,
   CommandRegistry,
   CompletionItem,
+  EnvStore,
   InteractiveSession,
   SessionIO,
+  ShellOverlayHost,
 } from './registry';
 import { measureWrappedPosition, truncateToWidth } from './width';
 
@@ -80,13 +83,54 @@ export class ShellController {
   private dataSubscription: { dispose(): void } | null = null;
   private resizeSubscription: { dispose(): void } | null = null;
   private unsubscribeHistory: (() => void) | null = null;
+  private unsubscribeConfig: (() => void) | null = null;
+  private configEnv: Record<string, string> = {};
+  private readonly sessionEnv = new Map<string, string | null>();
   private disposed = false;
 
   constructor(
     private readonly terminal: TerminalIO,
     private readonly adapter: BrowserAdapter,
     private readonly registry: CommandRegistry,
+    private readonly ui?: ShellOverlayHost,
   ) {}
+
+  private applyConfigEnv(config: SplashConfig): void {
+    const next: Record<string, string> = {};
+    if (config.env?.EDITOR) {
+      next.EDITOR = config.env.EDITOR;
+    }
+    this.configEnv = next;
+  }
+
+  private resolveEnv(
+    inlineEnv?: Record<string, string>,
+  ): Record<string, string> {
+    const merged: Record<string, string> = { ...this.configEnv };
+    for (const [key, value] of this.sessionEnv.entries()) {
+      if (value === null) {
+        delete merged[key];
+      } else {
+        merged[key] = value;
+      }
+    }
+    if (inlineEnv) {
+      for (const [key, value] of Object.entries(inlineEnv)) {
+        merged[key] = value;
+      }
+    }
+    return merged;
+  }
+
+  private readonly envStore: EnvStore = {
+    getAll: () => this.resolveEnv(),
+    set: (key: string, value: string) => {
+      this.sessionEnv.set(key, value);
+    },
+    unset: (key: string) => {
+      this.sessionEnv.set(key, null);
+    },
+  };
 
   async start(): Promise<void> {
     try {
@@ -96,8 +140,19 @@ export class ShellController {
       // Ignore transient storage load errors on startup
     }
 
+    try {
+      const config = await this.adapter.loadConfig();
+      this.applyConfigEnv(config);
+    } catch {
+      // Ignore transient config load errors on startup
+    }
+
     this.unsubscribeHistory = this.adapter.onHistoryChanged((entries) => {
       this.editor.setHistory(entries);
+    });
+
+    this.unsubscribeConfig = this.adapter.onConfigChanged((config) => {
+      this.applyConfigEnv(config);
     });
 
     this.dataSubscription = this.terminal.onData((data) => {
@@ -122,6 +177,8 @@ export class ShellController {
     this.resizeSubscription = null;
     this.unsubscribeHistory?.();
     this.unsubscribeHistory = null;
+    this.unsubscribeConfig?.();
+    this.unsubscribeConfig = null;
   }
 
   handleData(data: string): Promise<void> {
@@ -414,32 +471,84 @@ export class ShellController {
       }
     }
 
-    const parsed = parseCommandLine(trimmed);
+    const parsed = parsePipeline(trimmed);
     if (!parsed.ok) {
       this.terminal.writeln(ansi.error(`splash: ${parsed.error}`));
       this.writePrompt();
       return;
     }
 
-    const [cmdName, ...args] = parsed.tokens;
-    if (!cmdName) {
+    if (parsed.stages.length === 0) {
       this.writePrompt();
       return;
     }
 
-    const cmd = this.registry.get(cmdName);
-    if (!cmd) {
-      this.terminal.writeln(ansi.error(`splash: command not found: ${cmdName}`));
+    // Bare single-stage KEY=VALUE assignments update the session environment
+    if (parsed.stages.length === 1 && parsed.stages[0]!.command === null) {
+      for (const [key, value] of Object.entries(parsed.stages[0]!.env)) {
+        this.envStore.set(key, value);
+      }
       this.writePrompt();
       return;
     }
 
-    const ctx = this.createCommandContext();
-    try {
-      await cmd.execute(ctx, args);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.terminal.writeln(ansi.error(`splash: ${cmdName}: ${msg}`));
+    let stdin: string | undefined = undefined;
+    for (let idx = 0; idx < parsed.stages.length; idx++) {
+      const stage = parsed.stages[idx]!;
+      const cmdName = stage.command;
+      if (!cmdName) {
+        this.terminal.writeln(
+          ansi.error("splash: syntax error near unexpected token '|'"),
+        );
+        break;
+      }
+
+      const cmd = this.registry.get(cmdName);
+      if (!cmd) {
+        this.terminal.writeln(
+          ansi.error(`splash: command not found: ${cmdName}`),
+        );
+        break;
+      }
+
+      const isPipedOut = idx < parsed.stages.length - 1;
+      const pipeChunks: string[] = [];
+      let stageFailed = false;
+
+      const ctx = this.createCommandContext({
+        stdin,
+        isPipedOut,
+        env: this.resolveEnv(stage.env),
+        write: isPipedOut
+          ? (text: string) => {
+              pipeChunks.push(text);
+            }
+          : undefined,
+        writeln: isPipedOut
+          ? (text = '') => {
+              pipeChunks.push(`${text}\n`);
+            }
+          : undefined,
+        onError: () => {
+          stageFailed = true;
+        },
+      });
+
+      try {
+        await cmd.execute(ctx, stage.args);
+      } catch (err) {
+        stageFailed = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        this.terminal.writeln(ansi.error(`splash: ${cmdName}: ${msg}`));
+      }
+
+      if (stageFailed) {
+        break;
+      }
+
+      if (isPipedOut) {
+        stdin = ansi.strip(pipeChunks.join('')).replace(/\r\n/g, '\n');
+      }
     }
 
     this.writePrompt();
@@ -681,16 +790,36 @@ export class ShellController {
     this.redrawLine();
   }
 
-  private createCommandContext(): CommandContext {
+  private createCommandContext(options?: {
+    stdin?: string;
+    isPipedOut?: boolean;
+    env?: Readonly<Record<string, string>>;
+    write?: (text: string) => void;
+    writeln?: (text?: string) => void;
+    onError?: () => void;
+  }): CommandContext {
     return {
       adapter: this.adapter,
       registry: this.registry,
       cols: Math.max(20, this.terminal.cols),
-      write: (text: string) => {
-        this.terminal.write(text);
-      },
-      writeln: (text = '') => {
-        this.terminal.writeln(text);
+      stdin: options?.stdin,
+      isPipedOut: options?.isPipedOut ?? false,
+      env: options?.env ?? this.resolveEnv(),
+      envStore: this.envStore,
+      ui: this.ui,
+      write:
+        options?.write ??
+        ((text: string) => {
+          this.terminal.write(text);
+        }),
+      writeln:
+        options?.writeln ??
+        ((text = '') => {
+          this.terminal.writeln(text);
+        }),
+      writeError: (text: string) => {
+        options?.onError?.();
+        this.terminal.writeln(ansi.error(text));
       },
       clear: () => {
         this.clearScreen();

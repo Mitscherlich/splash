@@ -18,12 +18,41 @@ export interface InteractiveSession {
   handleResize?(cols: number, rows: number): void;
 }
 
+export interface EnvStore {
+  getAll(): Record<string, string>;
+  set(key: string, value: string): void;
+  unset(key: string): void;
+}
+
+export interface NoteVimEditorOptions {
+  noteId: number | null;
+  initialContent: string;
+}
+
+export interface NoteVimEditorResult {
+  savedId: number | null;
+}
+
+export interface ShellOverlayHost {
+  openNoteGui(adapter: BrowserAdapter): Promise<void>;
+  openNoteVimEditor(
+    adapter: BrowserAdapter,
+    options: NoteVimEditorOptions,
+  ): Promise<NoteVimEditorResult>;
+}
+
 export interface CommandContext {
   adapter: BrowserAdapter;
   registry: CommandRegistry;
   cols: number;
+  stdin?: string;
+  isPipedOut: boolean;
+  env: Readonly<Record<string, string>>;
+  envStore: EnvStore;
+  ui?: ShellOverlayHost;
   write(text: string): void;
   writeln(text?: string): void;
+  writeError(text: string): void;
   clear(): void;
   runSession(session: InteractiveSession): Promise<void>;
 }

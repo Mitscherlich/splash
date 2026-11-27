@@ -9,16 +9,31 @@ function createContext(adapter: FakeBrowserAdapter, cols = 100) {
   const registry = createDefaultRegistry();
   const lines: string[] = [];
   let cleared = 0;
+  const sessionEnv: Record<string, string> = {};
 
   const ctx: CommandContext = {
     adapter,
     registry,
     cols,
+    isPipedOut: false,
+    env: sessionEnv,
+    envStore: {
+      getAll: () => ({ ...sessionEnv }),
+      set: (key, value) => {
+        sessionEnv[key] = value;
+      },
+      unset: (key) => {
+        delete sessionEnv[key];
+      },
+    },
     write(text: string) {
       lines.push(text);
     },
     writeln(text = '') {
       lines.push(`${text}\n`);
+    },
+    writeError(text: string) {
+      lines.push(`${ansi.error(text)}\n`);
     },
     clear() {
       cleared += 1;

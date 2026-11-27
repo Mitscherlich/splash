@@ -3,7 +3,6 @@ import {
   parseConfigText,
   serializeConfig,
 } from '../config/schema';
-import { ansi } from '../shell/ansi';
 import type { CommandDefinition } from '../shell/registry';
 import { VimSession } from '../shell/vimSession';
 
@@ -22,14 +21,19 @@ export const vimCommand: CommandDefinition = {
   },
 
   async execute(ctx, args) {
+    if (ctx.isPipedOut) {
+      ctx.writeError('vim: interactive editor cannot be piped');
+      return;
+    }
+
     if (args.length !== 1) {
-      ctx.writeln(`usage: vim ${CONFIG_PATH}`);
+      ctx.writeError(`usage: vim ${CONFIG_PATH}`);
       return;
     }
 
     const targetPath = args[0]!;
     if (targetPath !== CONFIG_PATH) {
-      ctx.writeln(ansi.error(`vim: only ${CONFIG_PATH} is editable`));
+      ctx.writeError(`vim: only ${CONFIG_PATH} is editable`);
       return;
     }
 
