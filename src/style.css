@@ -236,6 +236,10 @@ body {
   color: var(--splash-fg);
 }
 
+.splash-overlay-veil [hidden] {
+  display: none !important;
+}
+
 .splash-ascii-btn {
   appearance: none;
   background: transparent;
@@ -351,15 +355,42 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
 }
 
-.splash-empty-art {
-  margin: 0;
-  font-family: var(--splash-mono);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--splash-subtle);
+.splash-empty-wrap {
+  position: relative;
+  width: min(420px, 84vw);
+  padding-top: 10px;
+  padding-right: 10px;
+  padding-bottom: 10px;
+}
+
+.splash-empty-card {
+  position: relative;
+  box-sizing: border-box;
+  background: var(--splash-surface-paper);
+  border: 1px dashed var(--splash-border);
+  padding: 16px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.splash-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--splash-fg);
+  text-align: center;
+  padding-top: 6px;
+}
+
+.splash-empty-sub {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--splash-muted);
+  text-align: center;
+  padding-bottom: 6px;
 }
 
 .splash-sticky-wrap {

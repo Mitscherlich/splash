@@ -484,15 +484,63 @@ export class NoteGuiOverlay {
       const emptyBox = this.doc.createElement('div');
       emptyBox.className = 'splash-pinboard-empty';
 
-      const art = this.doc.createElement('pre');
-      art.className = 'splash-empty-art';
-      art.textContent = [
-        '┌────────────────────────────────────┐',
-        '│             (o)                    │',
-        '│         暂无备忘记录               │',
-        '│     按 [n] 钉上第一张便签          │',
-        '└──────────────────────────────────_╱┘',
-      ].join('\n');
+      const wrap = this.doc.createElement('div');
+      wrap.className = 'splash-empty-wrap';
+
+      const shadow = this.doc.createElement('div');
+      shadow.className = 'splash-sticky-shadow';
+      shadow.setAttribute('aria-hidden', 'true');
+      shadow.textContent = SHADOW_PATTERN;
+
+      const card = this.doc.createElement('div');
+      card.className = 'splash-empty-card';
+
+      const pin = this.doc.createElement('div');
+      pin.className = 'splash-pushpin amber';
+      pin.textContent = '(o)';
+
+      const topRule = this.doc.createElement('div');
+      topRule.className = 'splash-card-top';
+
+      const idSpan = this.doc.createElement('span');
+      idSpan.className = 'splash-card-id';
+      idSpan.textContent = '#0';
+
+      const emptyTag = this.doc.createElement('span');
+      emptyTag.textContent = 'EMPTY PINBOARD';
+
+      topRule.appendChild(idSpan);
+      topRule.appendChild(emptyTag);
+
+      const emptyTitle = this.doc.createElement('div');
+      emptyTitle.className = 'splash-empty-title';
+      emptyTitle.textContent = '暂无备忘记录';
+
+      const emptySub = this.doc.createElement('div');
+      emptySub.className = 'splash-empty-sub';
+      emptySub.textContent = '按 [n] 钉上第一张便签，或命令行执行 note new <内容>';
+
+      const cardFooter = this.doc.createElement('div');
+      cardFooter.className = 'splash-card-footer';
+
+      const hintSpan = this.doc.createElement('span');
+      hintSpan.textContent = '0 条';
+
+      const dogear = this.doc.createElement('span');
+      dogear.className = 'splash-card-dogear';
+      dogear.textContent = '_╱';
+
+      cardFooter.appendChild(hintSpan);
+      cardFooter.appendChild(dogear);
+
+      card.appendChild(pin);
+      card.appendChild(topRule);
+      card.appendChild(emptyTitle);
+      card.appendChild(emptySub);
+      card.appendChild(cardFooter);
+
+      wrap.appendChild(shadow);
+      wrap.appendChild(card);
 
       const cta = this.doc.createElement('button');
       cta.className = 'splash-ascii-btn primary';
@@ -502,7 +550,7 @@ export class NoteGuiOverlay {
         void this.launchVimEditor(null, '');
       });
 
-      emptyBox.appendChild(art);
+      emptyBox.appendChild(wrap);
       emptyBox.appendChild(cta);
       surface.replaceChildren(emptyBox);
       return;

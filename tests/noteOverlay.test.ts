@@ -322,9 +322,16 @@ describe('NoteGuiOverlay (ASCII Corkboard) and BrowserOverlayHost', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(adapter.notes.items.map((n) => n.id)).toEqual([1, 3]);
 
-    // External tab clears all notes -> empty state rendered
+    // External tab clears all notes -> empty state renders structured card (not CJK-padded <pre>) and hides edit/delete buttons
     adapter.emitExternalNotesChange({ nextId: 4, items: [] });
     expect(body.collectText()).toContain('暂无备忘');
+    expect(body.findAll((el) => el.className === 'splash-empty-card')).toHaveLength(1);
+    expect(body.findAll((el) => el.tagName === 'PRE')).toHaveLength(0);
+    const buttons = body.findAll((el) => el.tagName === 'BUTTON');
+    const editBtn = buttons.find((b) => b.textContent?.includes('Vim 编辑'))!;
+    const delBtn = buttons.find((b) => b.textContent?.includes('删除'))!;
+    expect(editBtn.hidden).toBe(true);
+    expect(delBtn.hidden).toBe(true);
 
     // Press q closes overlay cleanly
     dialog.dispatch('keydown', { key: 'q' });
