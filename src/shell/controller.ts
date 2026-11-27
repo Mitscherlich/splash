@@ -185,6 +185,9 @@ export class ShellController {
     if (this.disposed || !data) {
       return this.activeSession ? this.sessionQueue : this.queue;
     }
+    if (this.ui?.hasActiveOverlay?.()) {
+      return Promise.resolve();
+    }
     if (this.activeSession) {
       const current = this.activeSession;
       this.sessionQueue = this.sessionQueue

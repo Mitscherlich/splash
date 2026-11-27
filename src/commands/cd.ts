@@ -1,4 +1,3 @@
-import { ansi } from '../shell/ansi';
 import type { CommandDefinition } from '../shell/registry';
 import { sanitizeTerminalText } from '../shell/width';
 
@@ -20,18 +19,18 @@ export const cdCommand: CommandDefinition = {
 
   async execute(ctx, args) {
     if (args.length === 0) {
-      ctx.writeln('usage: cd <tabId>  (hint: press Tab to complete)');
+      ctx.writeError('usage: cd <tabId>  (hint: press Tab to complete)');
       return;
     }
 
     if (args.length > 1) {
-      ctx.writeln(ansi.error(`cd: invalid tab id: ${args.join(' ')}`));
+      ctx.writeError(`cd: invalid tab id: ${args.join(' ')}`);
       return;
     }
 
     const raw = args[0]!;
     if (!POSITIVE_INT_RE.test(raw)) {
-      ctx.writeln(ansi.error(`cd: invalid tab id: ${raw}`));
+      ctx.writeError(`cd: invalid tab id: ${raw}`);
       return;
     }
 
@@ -43,7 +42,7 @@ export const cdCommand: CommandDefinition = {
 
     const status = await ctx.adapter.activateTab(tabId);
     if (status === 'not_found') {
-      ctx.writeln(ansi.error(`cd: tab not found: ${tabId}`));
+      ctx.writeError(`cd: tab not found: ${tabId}`);
     }
   },
 

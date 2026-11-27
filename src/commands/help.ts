@@ -26,7 +26,7 @@ export const helpCommand: CommandDefinition = {
     const targetName = args[0]!;
     const cmd = ctx.registry.get(targetName);
     if (!cmd) {
-      ctx.writeln(ansi.error(`help: unknown command: ${targetName}`));
+      ctx.writeError(`help: unknown command: ${targetName}`);
       return;
     }
 

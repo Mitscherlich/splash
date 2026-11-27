@@ -87,6 +87,9 @@ function boot(): void {
     copyOnSelect.onSelectionChange();
   });
 
+  const appEl = document.getElementById('app') as
+    | (HTMLElement & { inert?: boolean })
+    | null;
   let overlayHost!: BrowserOverlayHost;
 
   const focusActiveSurface = () => {
@@ -99,6 +102,11 @@ function boot(): void {
 
   overlayHost = new BrowserOverlayHost({
     createTerminal: createXtermModalTerminal,
+    onOverlayStateChange: (active) => {
+      if (appEl) {
+        appEl.inert = active;
+      }
+    },
     onRestoreTerminalFocus: () => {
       terminal.focus();
     },

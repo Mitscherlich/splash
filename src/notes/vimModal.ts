@@ -171,15 +171,48 @@ export class NoteVimModal {
       let resizeSub: { dispose(): void } | null = null;
 
       const stopKeyPropagation = (ev: unknown) => {
-        const keyEv = ev as { stopPropagation?: () => void };
+        const keyEv = ev as {
+          key?: string;
+          preventDefault?: () => void;
+          stopPropagation?: () => void;
+        };
         keyEv.stopPropagation?.();
+        if (keyEv.key === 'Tab') {
+          keyEv.preventDefault?.();
+          term.focus();
+        }
       };
+
+      const isActionOrTermTarget = (target: unknown): 'button' | 'term' | 'other' => {
+        const el = target as { tagName?: string; closest?: (sel: string) => unknown } | null;
+        if (!el) return 'other';
+        if (typeof el.closest === 'function') {
+          if (el.closest('button')) return 'button';
+          if (el.closest('.splash-vim-term')) return 'term';
+          return 'other';
+        }
+        if (el.tagName?.toUpperCase() === 'BUTTON') return 'button';
+        return el === termHost ? 'term' : 'other';
+      };
+
+      const onBackdropMouseDown = (ev: unknown) => {
+        if (this.closed) return;
+        const mouseEv = ev as { target?: unknown; preventDefault?: () => void };
+        const kind = isActionOrTermTarget(mouseEv.target);
+        if (kind === 'other') {
+          mouseEv.preventDefault?.();
+          term.focus();
+        }
+      };
+
       backdrop.addEventListener('keydown', stopKeyPropagation);
+      backdrop.addEventListener('mousedown', onBackdropMouseDown);
 
       const cleanup = () => {
         if (this.closed) return;
         this.closed = true;
         backdrop.removeEventListener('keydown', stopKeyPropagation);
+        backdrop.removeEventListener('mousedown', onBackdropMouseDown);
         unsubscribeNotes?.();
         unsubscribeNotes = null;
         resizeObserver?.disconnect();

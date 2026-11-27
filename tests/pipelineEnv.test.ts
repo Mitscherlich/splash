@@ -100,6 +100,84 @@ describe('Shell pipelines and echo/cat built-ins', () => {
 
     controller.dispose();
   });
+
+  it('prevents legacy command errors (ls, cd, open, help, man) and note/cat errors from overwriting downstream notes', async () => {
+    const adapter = new FakeBrowserAdapter({
+      notes: {
+        nextId: 2,
+        items: [{ id: 1, content: 'precious note', createdAt: 10, updatedAt: 10 }],
+      },
+    });
+    const term = new FakeTerminal();
+    const controller = new ShellController(term, adapter, createDefaultRegistry());
+    await controller.start();
+
+    for (const cmd of [
+      'ls -z | note 1',
+      'cd 999 | note 1',
+      'open javascript:alert(1) | note 1',
+      'help nope | note 1',
+      'man nope | note 1',
+      'cat /bad | note 1',
+      'note rm 99 | note 1',
+    ]) {
+      term.reset();
+      await runLine(controller, cmd);
+      expect(adapter.notes.items.find((n) => n.id === 1)?.content).toBe(
+        'precious note',
+      );
+    }
+
+    controller.dispose();
+  });
+
+  it('drops main-terminal keystrokes while an overlay reports active so leaked input never executes on close', async () => {
+    const adapter = new FakeBrowserAdapter({
+      notes: {
+        nextId: 2,
+        items: [{ id: 1, content: 'keep me', createdAt: 10, updatedAt: 10 }],
+      },
+    });
+    const term = new FakeTerminal();
+    let overlayActive = false;
+    let closeOverlay!: () => void;
+    const ui = {
+      hasActiveOverlay: () => overlayActive,
+      openNoteGui: async () => {
+        overlayActive = true;
+        await new Promise<void>((resolve) => {
+          closeOverlay = () => {
+            overlayActive = false;
+            resolve();
+          };
+        });
+      },
+      openNoteVimEditor: async () => ({ savedId: null }),
+    };
+
+    const controller = new ShellController(
+      term,
+      adapter,
+      createDefaultRegistry(),
+      ui,
+    );
+    await controller.start();
+
+    await controller.handleData('note --gui');
+    const guiRun = controller.handleData('\r');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(overlayActive).toBe(true);
+
+    // Simulate leaked keystrokes hitting main xterm while overlay is open
+    await controller.handleData('note rm 1\r');
+    closeOverlay();
+    await guiRun;
+
+    // Leaked command must NOT have executed
+    expect(adapter.notes.items.find((n) => n.id === 1)?.content).toBe('keep me');
+
+    controller.dispose();
+  });
 });
 
 describe('Layered environment variables (config < session < inline)', () => {

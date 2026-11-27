@@ -14,7 +14,7 @@ export const manCommand: CommandDefinition = {
 
   execute(ctx, args) {
     if (args.length !== 1) {
-      ctx.writeln('usage: man <command>');
+      ctx.writeError('usage: man <command>');
       const names = ctx.registry.names().join(', ');
       if (names) {
         ctx.writeln(ansi.muted(`available manuals: ${names}`));
@@ -25,7 +25,7 @@ export const manCommand: CommandDefinition = {
     const name = args[0]!;
     const cmd = ctx.registry.get(name);
     if (!cmd) {
-      ctx.writeln(ansi.error(`No manual entry for ${name}`));
+      ctx.writeError(`No manual entry for ${name}`);
       return;
     }
 

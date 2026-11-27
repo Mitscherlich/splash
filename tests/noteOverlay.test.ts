@@ -14,6 +14,10 @@ import { FakeBrowserAdapter } from './fakeAdapter';
 interface FakeEvent {
   type: string;
   key?: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
   target?: FakeElement;
   defaultPrevented: boolean;
   propagationStopped: boolean;
@@ -119,10 +123,24 @@ class FakeElement implements OverlayElementLike {
     this.listeners.get(type)?.delete(listener as (ev: FakeEvent) => void);
   }
 
-  dispatch(type: string, init?: { key?: string; target?: FakeElement }): FakeEvent {
+  dispatch(
+    type: string,
+    init?: {
+      key?: string;
+      ctrlKey?: boolean;
+      metaKey?: boolean;
+      altKey?: boolean;
+      shiftKey?: boolean;
+      target?: FakeElement;
+    },
+  ): FakeEvent {
     const ev: FakeEvent = {
       type,
       key: init?.key,
+      ctrlKey: init?.ctrlKey,
+      metaKey: init?.metaKey,
+      altKey: init?.altKey,
+      shiftKey: init?.shiftKey,
       target: init?.target ?? this,
       defaultPrevented: false,
       propagationStopped: false,
@@ -343,6 +361,89 @@ describe('NoteGuiOverlay (ASCII Corkboard) and BrowserOverlayHost', () => {
     fakeTerm.emitData(':q\r');
     await editPromise;
     expect(host.hasActiveOverlay()).toBe(false);
+    expect(restoreFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('traps Tab, preserves browser Cmd/Ctrl shortcuts, refocuses on non-button clicks, and guards nested GUI/Vim overlay state', async () => {
+    const adapter = new FakeBrowserAdapter({
+      notes: {
+        nextId: 3,
+        items: [
+          { id: 1, content: 'One', createdAt: 10, updatedAt: 10 },
+          { id: 2, content: 'Two', createdAt: 20, updatedAt: 20 },
+        ],
+      },
+    });
+    const { doc, body } = createFakeDocument();
+    const terminals: FakeModalTerminal[] = [];
+    const overlayStates: boolean[] = [];
+    const restoreFocus = vi.fn();
+
+    const host = new BrowserOverlayHost({
+      doc,
+      mountParent: body,
+      onRestoreTerminalFocus: restoreFocus,
+      onOverlayStateChange: (active) => overlayStates.push(active),
+      createTerminal: () => {
+        const t = new FakeModalTerminal();
+        terminals.push(t);
+        return t;
+      },
+    });
+
+    const guiPromise = host.openNoteGui(adapter);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(host.hasActiveOverlay()).toBe(true);
+    expect(overlayStates).toEqual([true]);
+
+    const dialog = body.findAll((el) => el.classList.contains('splash-pinboard'))[0]!;
+    const surface = body.findAll((el) => el.className === 'splash-cork-surface')[0]!;
+
+    // Browser shortcuts (Cmd+L, Ctrl+N, Ctrl+D, Alt+Q) must NOT be prevented or trigger actions
+    const cmdL = dialog.dispatch('keydown', { key: 'l', metaKey: true });
+    expect(cmdL.defaultPrevented).toBe(false);
+    const ctrlN = dialog.dispatch('keydown', { key: 'n', ctrlKey: true });
+    expect(ctrlN.defaultPrevented).toBe(false);
+    expect(terminals).toHaveLength(0);
+    const ctrlD = dialog.dispatch('keydown', { key: 'd', ctrlKey: true });
+    expect(ctrlD.defaultPrevented).toBe(false);
+    expect(body.collectText()).not.toContain('确认删除');
+
+    // Tab key is trapped inside overlay
+    const tabEv = dialog.dispatch('keydown', { key: 'Tab' });
+    expect(tabEv.defaultPrevented).toBe(true);
+
+    // Clicking non-button surface refocuses dialog so keyboard nav keeps working
+    dialog.focused = false;
+    dialog.dispatch('mousedown', { target: surface });
+    expect(dialog.focused).toBe(true);
+
+    // Open nested Vim modal via 'e', verify Tab trap & backdrop mousedown refocuses embedded term
+    dialog.dispatch('keydown', { key: 'e' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(terminals).toHaveLength(1);
+    const nestedTerm = terminals[0]!;
+    const vimBackdrop = body.findAll((el) => el.className === 'splash-vim-backdrop')[0]!;
+    const vimHint = body.findAll((el) => el.className === 'splash-vim-hint')[0]!;
+
+    const modalTab = vimBackdrop.dispatch('keydown', { key: 'Tab' });
+    expect(modalTab.defaultPrevented).toBe(true);
+
+    nestedTerm.focused = false;
+    vimBackdrop.dispatch('mousedown', { target: vimHint });
+    expect(nestedTerm.focused).toBe(true);
+
+    // Exit nested Vim modal -> overlay remains active, restoreFocus NOT called yet
+    nestedTerm.emitData(':q\r');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(host.hasActiveOverlay()).toBe(true);
+    expect(restoreFocus).not.toHaveBeenCalled();
+
+    // Close corkboard -> overlay inactive, onOverlayStateChange(false), restoreFocus called once
+    dialog.dispatch('keydown', { key: 'q' });
+    await guiPromise;
+    expect(host.hasActiveOverlay()).toBe(false);
+    expect(overlayStates).toEqual([true, false]);
     expect(restoreFocus).toHaveBeenCalledTimes(1);
   });
 });

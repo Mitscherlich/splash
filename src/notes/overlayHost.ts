@@ -16,6 +16,7 @@ export interface BrowserOverlayHostOptions {
   doc?: OverlayDocumentLike;
   mountParent?: OverlayElementLike;
   onRestoreTerminalFocus?: () => void;
+  onOverlayStateChange?: (active: boolean) => void;
   createTerminal: ModalTerminalFactory;
 }
 
@@ -27,6 +28,7 @@ export class BrowserOverlayHost implements ShellOverlayHost {
   private readonly doc?: OverlayDocumentLike;
   private readonly mountParent?: OverlayElementLike;
   private readonly onRestoreTerminalFocus?: () => void;
+  private readonly onOverlayStateChange?: (active: boolean) => void;
   private readonly createTerminal: ModalTerminalFactory;
   private readonly stack: FocusableOverlay[] = [];
 
@@ -34,6 +36,7 @@ export class BrowserOverlayHost implements ShellOverlayHost {
     this.doc = options.doc;
     this.mountParent = options.mountParent;
     this.onRestoreTerminalFocus = options.onRestoreTerminalFocus;
+    this.onOverlayStateChange = options.onOverlayStateChange;
     this.createTerminal = options.createTerminal;
   }
 
@@ -53,7 +56,7 @@ export class BrowserOverlayHost implements ShellOverlayHost {
       mountParent: this.mountParent,
       createTerminal: this.createTerminal,
     });
-    this.stack.push(overlay);
+    this.pushOverlay(overlay);
     try {
       await overlay.open();
     } finally {
@@ -74,11 +77,19 @@ export class BrowserOverlayHost implements ShellOverlayHost {
       mountParent: this.mountParent,
       createTerminal: this.createTerminal,
     });
-    this.stack.push(modal);
+    this.pushOverlay(modal);
     try {
       return await modal.open();
     } finally {
       this.popOverlay(modal);
+    }
+  }
+
+  private pushOverlay(overlay: FocusableOverlay): void {
+    const wasEmpty = this.stack.length === 0;
+    this.stack.push(overlay);
+    if (wasEmpty) {
+      this.onOverlayStateChange?.(true);
     }
   }
 
@@ -88,6 +99,7 @@ export class BrowserOverlayHost implements ShellOverlayHost {
       this.stack.splice(idx, 1);
     }
     if (this.stack.length === 0) {
+      this.onOverlayStateChange?.(false);
       this.onRestoreTerminalFocus?.();
     } else {
       this.focusActiveOverlay();

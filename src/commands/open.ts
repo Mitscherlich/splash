@@ -1,4 +1,3 @@
-import { ansi } from '../shell/ansi';
 import type { CommandDefinition } from '../shell/registry';
 import { sanitizeTerminalText } from '../shell/width';
 import { rankVisitedUrls } from './openHistory';
@@ -85,10 +84,10 @@ export const openCommand: CommandDefinition = {
     const target = resolveOpenTarget(args);
     switch (target.kind) {
       case 'usage':
-        ctx.writeln('usage: open <url | search query>');
+        ctx.writeError('usage: open <url | search query>');
         return;
       case 'error':
-        ctx.writeln(ansi.error(target.message));
+        ctx.writeError(target.message);
         return;
       case 'url':
         await ctx.adapter.openUrl(target.url);

@@ -170,6 +170,8 @@ export class NoteGuiOverlay {
         if (this.closed) return;
         this.closed = true;
         dialog.removeEventListener('keydown', onKeyDown);
+        dialog.removeEventListener('mousedown', onDialogMouseDown);
+        veil.removeEventListener('mousedown', onVeilMouseDown);
         veil.removeEventListener('click', onVeilClick);
         unsubscribeNotes?.();
         unsubscribeNotes = null;
@@ -177,6 +179,33 @@ export class NoteGuiOverlay {
         this.veilEl = null;
         this.dialogEl = null;
         resolve();
+      };
+
+      const isButtonTarget = (target: unknown): boolean => {
+        const el = target as { tagName?: string; closest?: (sel: string) => unknown } | null;
+        if (!el) return false;
+        if (typeof el.closest === 'function') {
+          return Boolean(el.closest('button'));
+        }
+        return el.tagName?.toUpperCase() === 'BUTTON';
+      };
+
+      const onDialogMouseDown = (ev: unknown) => {
+        if (this.closed || this.modalOpen) return;
+        const mouseEv = ev as { target?: unknown; preventDefault?: () => void };
+        if (!isButtonTarget(mouseEv.target)) {
+          mouseEv.preventDefault?.();
+          dialog.focus();
+        }
+      };
+
+      const onVeilMouseDown = (ev: unknown) => {
+        if (this.closed || this.modalOpen) return;
+        const mouseEv = ev as { target?: unknown; preventDefault?: () => void };
+        if (mouseEv.target === veil && this.pendingDeleteId !== null) {
+          mouseEv.preventDefault?.();
+          dialog.focus();
+        }
       };
 
       const onVeilClick = (ev: unknown) => {
@@ -193,6 +222,9 @@ export class NoteGuiOverlay {
       const onKeyDown = (ev: unknown) => {
         const keyEv = ev as {
           key?: string;
+          ctrlKey?: boolean;
+          metaKey?: boolean;
+          altKey?: boolean;
           preventDefault?: () => void;
           stopPropagation?: () => void;
         };
@@ -200,7 +232,18 @@ export class NoteGuiOverlay {
         const key = keyEv.key;
         if (!key) return;
 
+        // Preserve browser shortcuts (Cmd/Ctrl+L, Cmd/Ctrl+N, Cmd/Ctrl+D, etc.)
+        if (keyEv.ctrlKey || keyEv.metaKey || keyEv.altKey) {
+          return;
+        }
+
         keyEv.stopPropagation?.();
+
+        // Trap Tab focus inside overlay so focus cannot escape to background terminal
+        if (key === 'Tab') {
+          keyEv.preventDefault?.();
+          return;
+        }
 
         // Inline delete confirmation mode
         if (this.pendingDeleteId !== null) {
@@ -299,6 +342,8 @@ export class NoteGuiOverlay {
       });
 
       dialog.addEventListener('keydown', onKeyDown);
+      dialog.addEventListener('mousedown', onDialogMouseDown);
+      veil.addEventListener('mousedown', onVeilMouseDown);
       veil.addEventListener('click', onVeilClick);
 
       unsubscribeNotes = this.adapter.onNotesChanged((state) => {

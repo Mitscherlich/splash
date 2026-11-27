@@ -34,6 +34,7 @@ export interface NoteVimEditorResult {
 }
 
 export interface ShellOverlayHost {
+  hasActiveOverlay?(): boolean;
   openNoteGui(adapter: BrowserAdapter): Promise<void>;
   openNoteVimEditor(
     adapter: BrowserAdapter,

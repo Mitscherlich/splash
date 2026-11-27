@@ -65,7 +65,7 @@ export const lsCommand: CommandDefinition = {
       if (arg === '-a' || arg === '--all') {
         includeNewTab = true;
       } else {
-        ctx.writeln(ansi.error(`ls: unknown option: ${arg}`));
+        ctx.writeError(`ls: unknown option: ${arg}`);
         return;
       }
     }
